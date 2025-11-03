@@ -43,6 +43,9 @@ dependencies:
   
   # Functional Programming
   dartz: ^0.10.1
+  
+  # Routing
+  go_router: ^14.6.2
 
 dev_dependencies:
   flutter_test:
