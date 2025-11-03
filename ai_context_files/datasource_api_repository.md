@@ -801,11 +801,9 @@ class ErrorHandler {
 ```dart
 // lib/data/data_sources/local_data_source.dart
 import 'dart:convert';
-import 'package:injectable/injectable.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:project_name/data/dto/post/post_dto.dart';
 
-@lazySingleton
 class LocalDataSource {
   final SharedPreferences _prefs;
 
@@ -861,13 +859,16 @@ class LocalDataSource {
 ### Register SharedPreferences
 
 ```dart
-// lib/data/data_sources/local_data_source.dart (module)
-@module
-abstract class LocalStorageModule {
-  @preResolve
-  @lazySingleton
-  Future<SharedPreferences> sharedPreferences() => 
-      SharedPreferences.getInstance();
+// lib/core/service_locator.dart or main.dart
+// Register SharedPreferences during app initialization
+Future<void> setupDependencies() async {
+  final sharedPrefs = await SharedPreferences.getInstance();
+  
+  // Create data sources
+  final localDataSource = LocalDataSource(sharedPrefs);
+  
+  // Use in repositories
+  // final postRepo = PostRepoImpl(apiDataSource, localDataSource);
 }
 ```
 
@@ -991,7 +992,6 @@ extension UserDtoX on UserDto {
 ### Example 1: Complete User Repository
 
 ```dart
-@Injectable(as: UserRepo)
 class UserRepoImpl implements UserRepo {
   final ApiDataSource _apiDataSource;
   final LocalDataSource _localDataSource;
@@ -1119,26 +1119,26 @@ Future<Either<AppError, String>> uploadProfilePicture(File image) async {
 - [ ] Configure Dio with base URL and timeouts
 - [ ] Add auth interceptor for token injection
 - [ ] Add logging interceptor for debugging
-- [ ] Define API endpoints with Retrofit
-- [ ] Run build_runner to generate code
+- [ ] Define API endpoints with manual Dio calls
+- [ ] Register data sources in service locator or main.dart
 
 ### DTO Creation
-- [ ] Create DTO with proper JSON annotations
-- [ ] Use `@JsonKey` for field name mapping
-- [ ] Add `fromJson` factory method
-- [ ] Create `toDomain()` extension
-- [ ] Create `toDto()` extension (if needed)
-- [ ] Run build_runner for code generation
+- [ ] Create DTO class with fields matching API response
+- [ ] Implement manual `fromJson` factory method
+- [ ] Implement manual `toJson` method
+- [ ] Handle field name mapping (snake_case ↔ camelCase) manually
+- [ ] Create `toDomain()` extension for DTO → Entity conversion
+- [ ] Create `toDto()` extension for Entity → DTO conversion (if needed)
 
 ### Repository Implementation
 - [ ] Implement domain repository interface
-- [ ] Use `@Injectable(as: Interface)` annotation
-- [ ] Inject data sources via constructor
-- [ ] Convert DTOs to domain entities
+- [ ] Use constructor injection for data sources
+- [ ] Convert DTOs to domain entities at repository boundary
 - [ ] Return `Either<AppError, T>` for all methods
 - [ ] Handle DioException specifically
 - [ ] Add generic exception handling
 - [ ] Consider caching strategy
+- [ ] Register repository in service locator
 
 ### Error Handling
 - [ ] Create AppError model
