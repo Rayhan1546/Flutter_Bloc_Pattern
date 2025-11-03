@@ -519,13 +519,13 @@ Repositories implement the domain interfaces and use data sources.
 
 ```dart
 // lib/data/repositories/user_repo_impl.dart
-import 'package:dartz/dartz.dart';
 import 'package:dio/dio.dart';
+import 'package:project_name/core/utils/app_error.dart';
+import 'package:project_name/core/utils/result.dart';
 import 'package:project_name/data/data_sources/api_data_source.dart';
 import 'package:project_name/data/dto/user/user_dto.dart';
 import 'package:project_name/domain/entities/user/user.dart';
 import 'package:project_name/domain/repositories/user_repo.dart';
-import 'package:project_name/utils/app_error.dart';
 
 class UserRepoImpl implements UserRepo {
   final ApiDataSource _apiDataSource;
@@ -533,42 +533,42 @@ class UserRepoImpl implements UserRepo {
   UserRepoImpl(this._apiDataSource);
 
   @override
-  Future<Either<AppError, User>> getCurrentUser() async {
+  Future<Result<User>> getCurrentUser() async {
     try {
       final userDto = await _apiDataSource.getCurrentUser();
-      return Right(userDto.toDomain());
+      return Success(userDto.toDomain());
     } on DioException catch (e) {
-      return Left(_handleDioError(e));
+      return Error(_handleDioError(e));
     } catch (e) {
-      return Left(AppError(message: 'Unexpected error: ${e.toString()}'));
+      return Error(AppError(message: 'Unexpected error: ${e.toString()}'));
     }
   }
 
   @override
-  Future<Either<AppError, User>> updateUser(User user) async {
+  Future<Result<User>> updateUser(User user) async {
     try {
       final userDto = await _apiDataSource.updateUser(
         user.id,
         user.toDto(),
       );
-      return Right(userDto.toDomain());
+      return Success(userDto.toDomain());
     } on DioException catch (e) {
-      return Left(_handleDioError(e));
+      return Error(_handleDioError(e));
     } catch (e) {
-      return Left(AppError(message: 'Unexpected error: ${e.toString()}'));
+      return Error(AppError(message: 'Unexpected error: ${e.toString()}'));
     }
   }
 
   @override
-  Future<Either<AppError, void>> deleteUser() async {
+  Future<Result<void>> deleteUser() async {
     try {
       // Assuming you have userId available, perhaps from auth service
       await _apiDataSource.deleteUser('current-user-id');
-      return const Right(null);
+      return const Success(null);
     } on DioException catch (e) {
-      return Left(_handleDioError(e));
+      return Error(_handleDioError(e));
     } catch (e) {
-      return Left(AppError(message: 'Unexpected error: ${e.toString()}'));
+      return Error(AppError(message: 'Unexpected error: ${e.toString()}'));
     }
   }
 
@@ -603,12 +603,13 @@ Combine API and local storage for offline support.
 
 ```dart
 // lib/data/repositories/post_repo_impl.dart
-import 'package:dartz/dartz.dart';
+import 'package:dio/dio.dart';
+import 'package:project_name/core/utils/app_error.dart';
+import 'package:project_name/core/utils/result.dart';
 import 'package:project_name/data/data_sources/api_data_source.dart';
 import 'package:project_name/data/data_sources/local_data_source.dart';
 import 'package:project_name/domain/entities/post/post.dart';
 import 'package:project_name/domain/repositories/post_repo.dart';
-import 'package:project_name/utils/app_error.dart';
 
 class PostRepoImpl implements PostRepo {
   final ApiDataSource _apiDataSource;
@@ -617,7 +618,7 @@ class PostRepoImpl implements PostRepo {
   PostRepoImpl(this._apiDataSource, this._localDataSource);
 
   @override
-  Future<Either<AppError, List<Post>>> getPosts() async {
+  Future<Result<List<Post>>> getPosts() async {
     try {
       // Try to fetch from API
       final dtos = await _apiDataSource.getPosts();
@@ -626,20 +627,20 @@ class PostRepoImpl implements PostRepo {
       // Cache the results locally
       await _localDataSource.cachePosts(dtos);
       
-      return Right(posts);
+      return Success(posts);
     } on DioException catch (e) {
       // If API fails, try to get from cache
       try {
         final cachedDtos = await _localDataSource.getCachedPosts();
         if (cachedDtos.isNotEmpty) {
           final posts = cachedDtos.map((dto) => dto.toDomain()).toList();
-          return Right(posts);
+          return Success(posts);
         }
       } catch (_) {
         // Cache also failed
       }
       
-      return Left(AppError(
+      return Error(AppError(
         message: e.response?.data['message'] ?? 'Failed to fetch posts',
         statusCode: e.response?.statusCode,
       ));
@@ -647,12 +648,12 @@ class PostRepoImpl implements PostRepo {
   }
 
   @override
-  Future<Either<AppError, Post>> createPost(Post post) async {
+  Future<Result<Post>> createPost(Post post) async {
     try {
       final dto = await _apiDataSource.createPost(post.toDto());
-      return Right(dto.toDomain());
+      return Success(dto.toDomain());
     } on DioException catch (e) {
-      return Left(AppError(
+      return Error(AppError(
         message: e.response?.data['message'] ?? 'Failed to create post',
         statusCode: e.response?.statusCode,
       ));
@@ -660,16 +661,16 @@ class PostRepoImpl implements PostRepo {
   }
 
   @override
-  Future<Either<AppError, void>> deletePost(int id) async {
+  Future<Result<void>> deletePost(int id) async {
     try {
       await _apiDataSource.deletePost(id);
       
       // Also remove from local cache
       await _localDataSource.deletePostFromCache(id);
       
-      return const Right(null);
+      return const Success(null);
     } on DioException catch (e) {
-      return Left(AppError(
+      return Error(AppError(
         message: e.response?.data['message'] ?? 'Failed to delete post',
         statusCode: e.response?.statusCode,
       ));
@@ -891,19 +892,19 @@ final user = await _apiDataSource.getUser(); // Returns User (domain entity)
 // ✅ Good - Comprehensive error handling
 try {
   final dto = await _apiDataSource.getUser();
-  return Right(dto.toDomain());
+  return Success(dto.toDomain());
 } on DioException catch (e) {
-  return Left(_handleDioError(e));
+  return Error(_handleDioError(e));
 } catch (e) {
-  return Left(AppError(message: 'Unexpected error: ${e.toString()}'));
+  return Error(AppError(message: 'Unexpected error: ${e.toString()}'));
 }
 
 // ❌ Bad - Generic catch
 try {
   final dto = await _apiDataSource.getUser();
-  return Right(dto.toDomain());
+  return Success(dto.toDomain());
 } catch (e) {
-  return Left(AppError(message: e.toString()));
+  return Error(AppError(message: e.toString()));
 }
 ```
 
@@ -928,25 +929,25 @@ if (kDebugMode) {
 
 ```dart
 // Strategy 1: Cache-first, then network
-Future<Either<AppError, List<Post>>> getPosts() async {
+Future<Result<List<Post>>> getPosts() async {
   // Return cached data immediately
   final cachedPosts = await _getCachedPosts();
   
   // Fetch fresh data in background
   _fetchAndCachePosts();
   
-  return Right(cachedPosts);
+  return Success(cachedPosts);
 }
 
 // Strategy 2: Network-first, fallback to cache
-Future<Either<AppError, List<Post>>> getPosts() async {
+Future<Result<List<Post>>> getPosts() async {
   try {
     final posts = await _fetchFromNetwork();
     await _cachePosts(posts);
-    return Right(posts);
+    return Success(posts);
   } catch (e) {
     final cachedPosts = await _getCachedPosts();
-    return Right(cachedPosts);
+    return Success(cachedPosts);
   }
 }
 ```
@@ -999,7 +1000,7 @@ class UserRepoImpl implements UserRepo {
   UserRepoImpl(this._apiDataSource, this._localDataSource);
 
   @override
-  Future<Either<AppError, User>> getCurrentUser() async {
+  Future<Result<User>> getCurrentUser() async {
     try {
       final userDto = await _apiDataSource.getCurrentUser();
       final user = userDto.toDomain();
@@ -1007,27 +1008,27 @@ class UserRepoImpl implements UserRepo {
       // Cache user locally
       await _localDataSource.saveString('current_user', jsonEncode(userDto.toJson()));
       
-      return Right(user);
+      return Success(user);
     } on DioException catch (e) {
-      return Left(_handleDioError(e));
+      return Error(_handleDioError(e));
     } catch (e) {
-      return Left(AppError(message: 'Unexpected error: ${e.toString()}'));
+      return Error(AppError(message: 'Unexpected error: ${e.toString()}'));
     }
   }
 
   @override
-  Future<Either<AppError, User>> updateUser(User user) async {
+  Future<Result<User>> updateUser(User user) async {
     try {
       final userDto = await _apiDataSource.updateUser(user.id, user.toDto());
       
       // Update local cache
       await _localDataSource.saveString('current_user', jsonEncode(userDto.toJson()));
       
-      return Right(userDto.toDomain());
+      return Success(userDto.toDomain());
     } on DioException catch (e) {
-      return Left(_handleDioError(e));
+      return Error(_handleDioError(e));
     } catch (e) {
-      return Left(AppError(message: 'Unexpected error: ${e.toString()}'));
+      return Error(AppError(message: 'Unexpected error: ${e.toString()}'));
     }
   }
 
@@ -1067,7 +1068,7 @@ class PaginatedResponseDto<T> with _$PaginatedResponseDto<T> {
 
 // Repository implementation
 @override
-Future<Either<AppError, PaginatedData<Post>>> getPostsPaginated(
+Future<Result<PaginatedData<Post>>> getPostsPaginated(
   int page,
   int limit,
 ) async {
@@ -1081,9 +1082,9 @@ Future<Either<AppError, PaginatedData<Post>>> getPostsPaginated(
       totalItems: response.totalItems,
     );
     
-    return Right(paginatedData);
+    return Success(paginatedData);
   } on DioException catch (e) {
-    return Left(_handleDioError(e));
+    return Error(_handleDioError(e));
   }
 }
 ```
@@ -1101,12 +1102,12 @@ Future<UploadResponseDto> uploadImage(
 
 // Repository
 @override
-Future<Either<AppError, String>> uploadProfilePicture(File image) async {
+Future<Result<String>> uploadProfilePicture(File image) async {
   try {
     final response = await _apiDataSource.uploadImage(image, 'profile_picture');
-    return Right(response.url);
+    return Success(response.url);
   } on DioException catch (e) {
-    return Left(_handleDioError(e));
+    return Error(_handleDioError(e));
   }
 }
 ```
@@ -1134,7 +1135,7 @@ Future<Either<AppError, String>> uploadProfilePicture(File image) async {
 - [ ] Implement domain repository interface
 - [ ] Use constructor injection for data sources
 - [ ] Convert DTOs to domain entities at repository boundary
-- [ ] Return `Either<AppError, T>` for all methods
+- [ ] Return `Result<T>` for all methods (Success or Error)
 - [ ] Handle DioException specifically
 - [ ] Add generic exception handling
 - [ ] Consider caching strategy

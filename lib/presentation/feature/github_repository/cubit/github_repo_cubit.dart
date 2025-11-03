@@ -1,4 +1,5 @@
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:junie_ai_test/core/utils/result.dart';
 import 'package:junie_ai_test/domain/use_cases/get_repositories_use_case.dart';
 import 'package:junie_ai_test/presentation/feature/github_repository/cubit/github_repo_state.dart';
 
@@ -13,15 +14,17 @@ class GithubRepoCubit extends Cubit<GithubRepoState> {
 
     final result = await _getRepositoriesUseCase();
 
-    result.fold(
-      (error) => emit(GithubRepoError(error.message)),
-      (repositories) => emit(
-        GithubRepoLoaded(
-          repositories: repositories,
-          filteredRepositories: repositories,
-        ),
-      ),
-    );
+    switch (result) {
+      case Success(:final data):
+        emit(
+          GithubRepoLoaded(
+            repositories: data,
+            filteredRepositories: data,
+          ),
+        );
+      case Error(:final error):
+        emit(GithubRepoError(error.message));
+    }
   }
 
   void searchRepositories(String query) {

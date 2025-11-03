@@ -41,9 +41,6 @@ dependencies:
   # Networking
   dio: ^5.7.0
   
-  # Functional Programming
-  dartz: ^0.10.1
-  
   # Routing
   go_router: ^14.6.2
 

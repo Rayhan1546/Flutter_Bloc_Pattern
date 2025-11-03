@@ -136,21 +136,20 @@ Create an abstract repository interface in the domain layer.
 
 ```dart
 // lib/domain/repositories/post_repo.dart
-import 'package:dartz/dartz.dart';
+import 'package:project_name/core/utils/result.dart';
 import 'package:project_name/domain/entities/post/post.dart';
-import 'package:project_name/utils/app_error.dart';
 
 abstract class PostRepo {
-  Future<Either<AppError, List<Post>>> getPosts();
-  Future<Either<AppError, Post>> getPostById(int id);
-  Future<Either<AppError, Post>> createPost(Post post);
-  Future<Either<AppError, Post>> updatePost(Post post);
-  Future<Either<AppError, void>> deletePost(int id);
+  Future<Result<List<Post>>> getPosts();
+  Future<Result<Post>> getPostById(int id);
+  Future<Result<Post>> createPost(Post post);
+  Future<Result<Post>> updatePost(Post post);
+  Future<Result<void>> deletePost(int id);
 }
 ```
 
 **Key Points**:
-- Use `Either<AppError, T>` for error handling
+- Use `Result<T>` for error handling (Success or Error)
 - Define all operations for this feature
 - Abstract class (no implementation)
 - Only use domain entities, never DTOs
@@ -164,26 +163,24 @@ Create individual use cases for each business operation.
 **Use Case Base Classes** (if not already created):
 ```dart
 // lib/domain/utils/use_case.dart
-import 'package:dartz/dartz.dart';
-import 'package:project_name/utils/app_error.dart';
+import 'package:project_name/core/utils/result.dart';
 
 abstract class UseCase<T, S> {
-  Future<Either<AppError, T>> call(S param);
+  Future<Result<T>> call(S param);
 }
 
 abstract class NoParamUseCase<T> {
-  Future<Either<AppError, T>> call();
+  Future<Result<T>> call();
 }
 ```
 
 **Example - Get Posts Use Case**:
 ```dart
 // lib/domain/use_cases/get_posts_use_case.dart
-import 'package:dartz/dartz.dart';
+import 'package:project_name/core/utils/result.dart';
 import 'package:project_name/domain/entities/post/post.dart';
 import 'package:project_name/domain/repositories/post_repo.dart';
 import 'package:project_name/domain/utils/use_case.dart';
-import 'package:project_name/utils/app_error.dart';
 
 class GetPostsUseCase implements NoParamUseCase<List<Post>> {
   final PostRepo _postRepo;
@@ -191,7 +188,7 @@ class GetPostsUseCase implements NoParamUseCase<List<Post>> {
   GetPostsUseCase(this._postRepo);
 
   @override
-  Future<Either<AppError, List<Post>>> call() {
+  Future<Result<List<Post>>> call() {
     return _postRepo.getPosts();
   }
 }
@@ -200,11 +197,10 @@ class GetPostsUseCase implements NoParamUseCase<List<Post>> {
 **Example - Create Post Use Case (with parameters)**:
 ```dart
 // lib/domain/use_cases/create_post_use_case.dart
-import 'package:dartz/dartz.dart';
+import 'package:project_name/core/utils/result.dart';
 import 'package:project_name/domain/entities/post/post.dart';
 import 'package:project_name/domain/repositories/post_repo.dart';
 import 'package:project_name/domain/utils/use_case.dart';
-import 'package:project_name/utils/app_error.dart';
 
 class CreatePostUseCase implements UseCase<Post, CreatePostParams> {
   final PostRepo _postRepo;
@@ -212,7 +208,7 @@ class CreatePostUseCase implements UseCase<Post, CreatePostParams> {
   CreatePostUseCase(this._postRepo);
 
   @override
-  Future<Either<AppError, Post>> call(CreatePostParams params) {
+  Future<Result<Post>> call(CreatePostParams params) {
     final post = Post(
       id: 0, // Will be set by backend
       title: params.title,
@@ -339,12 +335,13 @@ Implement the repository interface in the data layer.
 
 ```dart
 // lib/data/repositories/post_repo_impl.dart
-import 'package:dartz/dartz.dart';
+import 'package:dio/dio.dart';
+import 'package:project_name/core/utils/app_error.dart';
+import 'package:project_name/core/utils/result.dart';
 import 'package:project_name/data/data_sources/api_data_source.dart';
 import 'package:project_name/data/dto/post/post_dto.dart';
 import 'package:project_name/domain/entities/post/post.dart';
 import 'package:project_name/domain/repositories/post_repo.dart';
-import 'package:project_name/utils/app_error.dart';
 
 class PostRepoImpl implements PostRepo {
   final ApiDataSource _apiDataSource;
@@ -352,78 +349,78 @@ class PostRepoImpl implements PostRepo {
   PostRepoImpl(this._apiDataSource);
 
   @override
-  Future<Either<AppError, List<Post>>> getPosts() async {
+  Future<Result<List<Post>>> getPosts() async {
     try {
       final dtos = await _apiDataSource.getPosts();
       final posts = dtos.map((dto) => dto.toDomain()).toList();
-      return Right(posts);
+      return Success(posts);
     } on DioException catch (e) {
-      return Left(AppError(
+      return Error(AppError(
         message: e.response?.data['message'] ?? 'Failed to fetch posts',
         statusCode: e.response?.statusCode,
       ));
     } catch (e) {
-      return Left(AppError(message: 'Unexpected error: ${e.toString()}'));
+      return Error(AppError(message: 'Unexpected error: ${e.toString()}'));
     }
   }
 
   @override
-  Future<Either<AppError, Post>> getPostById(int id) async {
+  Future<Result<Post>> getPostById(int id) async {
     try {
       final dto = await _apiDataSource.getPostById(id);
-      return Right(dto.toDomain());
+      return Success(dto.toDomain());
     } on DioException catch (e) {
-      return Left(AppError(
+      return Error(AppError(
         message: e.response?.data['message'] ?? 'Failed to fetch post',
         statusCode: e.response?.statusCode,
       ));
     } catch (e) {
-      return Left(AppError(message: 'Unexpected error: ${e.toString()}'));
+      return Error(AppError(message: 'Unexpected error: ${e.toString()}'));
     }
   }
 
   @override
-  Future<Either<AppError, Post>> createPost(Post post) async {
+  Future<Result<Post>> createPost(Post post) async {
     try {
       final dto = await _apiDataSource.createPost(post.toDto());
-      return Right(dto.toDomain());
+      return Success(dto.toDomain());
     } on DioException catch (e) {
-      return Left(AppError(
+      return Error(AppError(
         message: e.response?.data['message'] ?? 'Failed to create post',
         statusCode: e.response?.statusCode,
       ));
     } catch (e) {
-      return Left(AppError(message: 'Unexpected error: ${e.toString()}'));
+      return Error(AppError(message: 'Unexpected error: ${e.toString()}'));
     }
   }
 
   @override
-  Future<Either<AppError, Post>> updatePost(Post post) async {
+  Future<Result<Post>> updatePost(Post post) async {
     try {
       final dto = await _apiDataSource.updatePost(post.id, post.toDto());
-      return Right(dto.toDomain());
+      return Success(dto.toDomain());
     } catch (e) {
-      return Left(AppError(message: e.toString()));
+      return Error(AppError(message: e.toString()));
     }
   }
 
   @override
-  Future<Either<AppError, void>> deletePost(int id) async {
+  Future<Result<void>> deletePost(int id) async {
     try {
       await _apiDataSource.deletePost(id);
-      return const Right(null);
+      return const Success(null);
     } catch (e) {
-      return Left(AppError(message: e.toString()));
+      return Error(AppError(message: e.toString()));
     }
   }
 }
 ```
 
 **Key Points**:
-- Use `@Injectable(as: InterfaceName)` to bind implementation to interface
+- Use constructor injection for dependencies
 - Convert DTOs to entities before returning
 - Wrap all operations in try-catch
-- Return `Either<AppError, T>` for all methods
+- Return `Result<T>` for all methods (Success or Error)
 - Handle different exception types (DioException, etc.)
 
 ### Step 6: Define State
@@ -552,10 +549,12 @@ class PostsCubit extends Cubit<PostsState> {
     
     final result = await _getPostsUseCase();
     
-    result.fold(
-      (error) => emit(PostsError(error.message)),
-      (posts) => emit(PostsLoaded(posts)),
-    );
+    switch (result) {
+      case Success(:final data):
+        emit(PostsLoaded(data));
+      case Error(:final error):
+        emit(PostsError(error.message));
+    }
   }
 
   Future<void> createPost({
@@ -573,13 +572,13 @@ class PostsCubit extends Cubit<PostsState> {
     
     final result = await _createPostUseCase(params);
     
-    result.fold(
-      (error) => emit(PostsError(error.message)),
-      (post) {
-        emit(PostsCreated(post));
+    switch (result) {
+      case Success(:final data):
+        emit(PostsCreated(data));
         loadPosts(); // Refresh list
-      },
-    );
+      case Error(:final error):
+        emit(PostsError(error.message));
+    }
   }
 
   Future<void> deletePost(int postId) async {
@@ -587,13 +586,13 @@ class PostsCubit extends Cubit<PostsState> {
     
     final result = await _deletePostUseCase(postId);
     
-    result.fold(
-      (error) => emit(PostsError(error.message)),
-      (_) {
+    switch (result) {
+      case Success():
         emit(const PostsDeleted());
         loadPosts(); // Refresh list
-      },
-    );
+      case Error(:final error):
+        emit(PostsError(error.message));
+    }
   }
 }
 ```
@@ -601,7 +600,7 @@ class PostsCubit extends Cubit<PostsState> {
 **Key Points**:
 - Inject use cases through constructor
 - Call use cases, don't implement business logic here
-- Use `fold` to handle Either results
+- Use pattern matching (switch) to handle Result types
 - Emit appropriate sealed class states
 
 ### Step 8: Create UI Page
@@ -892,7 +891,7 @@ Use this checklist when creating a new feature:
 - [ ] Create `toDto()` extension (if needed)
 - [ ] Implement repository in `data/repositories/`
 - [ ] Use constructor injection for data sources
-- [ ] Handle errors with Either
+- [ ] Handle errors with Result (Success/Error)
 - [ ] Add data source methods if needed
 
 ### Presentation Layer
@@ -924,7 +923,7 @@ Use this checklist when creating a new feature:
 2. **One Use Case, One Responsibility**: Don't create god use cases
 3. **Keep Domain Pure**: No Flutter imports in domain layer
 4. **Map at Boundaries**: Convert DTO ↔ Entity at repository level
-5. **Error Handling**: Always use Either for operations that can fail
+5. **Error Handling**: Always use Result for operations that can fail
 6. **Manual Implementations**: Implement copyWith, equality operators, fromJson/toJson manually
 7. **State Management**: Use sealed classes with pattern matching
 8. **Constructor Injection**: Pass all dependencies through constructors
@@ -938,7 +937,7 @@ Use this checklist when creating a new feature:
 5. ❌ Not handling all state cases in UI
 6. ❌ Forgetting to implement copyWith or equality operators
 7. ❌ Missing fromJson or toJson in DTOs
-8. ❌ Not using Either for error handling
+8. ❌ Not using Result for error handling
 9. ❌ Using mutable fields in entities
 10. ❌ Not using sealed classes for states
 

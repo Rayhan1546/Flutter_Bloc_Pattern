@@ -1,6 +1,6 @@
-import 'package:dartz/dartz.dart';
 import 'package:dio/dio.dart';
 import 'package:junie_ai_test/core/utils/app_error.dart';
+import 'package:junie_ai_test/core/utils/result.dart';
 import 'package:junie_ai_test/data/data_sources/api_data_source.dart';
 import 'package:junie_ai_test/data/dto/github_repository/github_repository_dto.dart';
 import 'package:junie_ai_test/domain/entities/github_repository/github_repository.dart';
@@ -12,15 +12,15 @@ class GithubRepoImpl implements GithubRepo {
   GithubRepoImpl(this._apiDataSource);
 
   @override
-  Future<Either<AppError, List<GithubRepository>>> getRepositories() async {
+  Future<Result<List<GithubRepository>>> getRepositories() async {
     try {
       final dtos = await _apiDataSource.getRepositories();
       final repositories = dtos.map((dto) => dto.toDomain()).toList();
-      return Right(repositories);
+      return Success(repositories);
     } on DioException catch (e) {
-      return Left(_handleDioError(e));
+      return Error(_handleDioError(e));
     } catch (e) {
-      return Left(AppError(message: 'Unexpected error: ${e.toString()}'));
+      return Error(AppError(message: 'Unexpected error: ${e.toString()}'));
     }
   }
 
