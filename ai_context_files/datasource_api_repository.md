@@ -1,0 +1,1151 @@
+# Data Source, API, and Repository Implementation Guide
+
+This guide provides detailed instructions for implementing the data layer components in Clean Architecture: Data Sources, API integration, and Repository implementations.
+
+## Table of Contents
+1. [Overview](#overview)
+2. [Data Layer Architecture](#data-layer-architecture)
+3. [Setting Up API Data Source](#setting-up-api-data-source)
+4. [Creating DTOs](#creating-dtos)
+5. [Implementing Repositories](#implementing-repositories)
+6. [Error Handling](#error-handling)
+7. [Local Data Sources](#local-data-sources)
+8. [Best Practices](#best-practices)
+9. [Complete Examples](#complete-examples)
+
+## Overview
+
+The data layer is responsible for:
+- Fetching data from external sources (API, Database, Cache)
+- Converting external data formats (JSON) to domain models
+- Implementing repository interfaces defined in the domain layer
+- Handling errors and exceptions
+
+**Key Principle**: The data layer depends on the domain layer, but the domain layer does NOT depend on the data layer.
+
+## Data Layer Architecture
+
+```
+lib/data/
+├── data_sources/
+│   ├── api_data_source.dart          # Retrofit API interface
+│   ├── local_data_source.dart        # Local storage (SharedPreferences, SQLite)
+│   └── cache_data_source.dart        # Cache layer
+├── dto/
+│   └── [feature_name]/
+│       └── [entity]_dto.dart         # Data Transfer Objects
+├── repositories/
+│   └── [feature]_repo_impl.dart      # Repository implementations
+├── interceptors/
+│   ├── auth_interceptor.dart         # Add auth tokens
+│   ├── logging_interceptor.dart      # Log requests/responses
+│   └── error_interceptor.dart        # Handle errors globally
+└── mappers/                           # Optional: complex mapping logic
+    └── [entity]_mapper.dart
+```
+
+## Setting Up API Data Source
+
+### Step 1: Configure Dio Client
+
+Create a Dio instance with base configuration.
+
+**Location**: `lib/data/network/dio_client.dart`
+
+```dart
+// lib/data/network/dio_client.dart
+import 'package:dio/dio.dart';
+import 'package:project_name/data/interceptors/auth_interceptor.dart';
+import 'package:project_name/data/interceptors/logging_interceptor.dart';
+
+class DioClient {
+  static Dio? _instance;
+
+  static Dio get instance {
+    _instance ??= _createDio();
+    return _instance!;
+  }
+
+  static Dio _createDio() {
+    final dio = Dio(
+      BaseOptions(
+        baseUrl: 'https://api.example.com/v1',
+        connectTimeout: const Duration(seconds: 30),
+        receiveTimeout: const Duration(seconds: 30),
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+        },
+      ),
+    );
+
+    // Add interceptors
+    dio.interceptors.addAll([
+      AuthInterceptor(),
+      LoggingInterceptor(),
+    ]);
+
+    return dio;
+  }
+}
+```
+
+### Step 2: Create Auth Interceptor
+
+Handle authentication tokens automatically.
+
+**Location**: `lib/data/interceptors/auth_interceptor.dart`
+
+```dart
+// lib/data/interceptors/auth_interceptor.dart
+import 'package:dio/dio.dart';
+
+class AuthInterceptor extends Interceptor {
+  @override
+  void onRequest(RequestOptions options, RequestInterceptorHandler handler) {
+    // Get token from secure storage or state management
+    final token = _getAuthToken();
+    
+    if (token != null) {
+      options.headers['Authorization'] = 'Bearer $token';
+    }
+    
+    super.onRequest(options, handler);
+  }
+
+  @override
+  void onError(DioException err, ErrorInterceptorHandler handler) {
+    if (err.response?.statusCode == 401) {
+      // Handle token refresh or logout
+      _handleUnauthorized();
+    }
+    
+    super.onError(err, handler);
+  }
+
+  String? _getAuthToken() {
+    // TODO: Implement token retrieval
+    // Example: Get from shared preferences or secure storage
+    return null;
+  }
+
+  void _handleUnauthorized() {
+    // TODO: Implement logout or token refresh logic
+  }
+}
+```
+
+### Step 3: Create Logging Interceptor
+
+Log API requests and responses for debugging.
+
+**Location**: `lib/data/interceptors/logging_interceptor.dart`
+
+```dart
+// lib/data/interceptors/logging_interceptor.dart
+import 'package:dio/dio.dart';
+import 'package:logger/logger.dart';
+
+class LoggingInterceptor extends Interceptor {
+  final Logger _logger = Logger(
+    printer: PrettyPrinter(
+      methodCount: 0,
+      errorMethodCount: 5,
+      lineLength: 50,
+      colors: true,
+      printEmojis: true,
+    ),
+  );
+
+  @override
+  void onRequest(RequestOptions options, RequestInterceptorHandler handler) {
+    _logger.d('┌───────────────────────────────────────────────');
+    _logger.d('│ REQUEST: ${options.method} ${options.uri}');
+    _logger.d('│ Headers: ${options.headers}');
+    if (options.data != null) {
+      _logger.d('│ Body: ${options.data}');
+    }
+    _logger.d('└───────────────────────────────────────────────');
+    
+    super.onRequest(options, handler);
+  }
+
+  @override
+  void onResponse(Response response, ResponseInterceptorHandler handler) {
+    _logger.i('┌───────────────────────────────────────────────');
+    _logger.i('│ RESPONSE: ${response.statusCode} ${response.requestOptions.uri}');
+    _logger.i('│ Data: ${response.data}');
+    _logger.i('└───────────────────────────────────────────────');
+    
+    super.onResponse(response, handler);
+  }
+
+  @override
+  void onError(DioException err, ErrorInterceptorHandler handler) {
+    _logger.e('┌───────────────────────────────────────────────');
+    _logger.e('│ ERROR: ${err.response?.statusCode} ${err.requestOptions.uri}');
+    _logger.e('│ Message: ${err.message}');
+    _logger.e('│ Response: ${err.response?.data}');
+    _logger.e('└───────────────────────────────────────────────');
+    
+    super.onError(err, handler);
+  }
+}
+```
+
+### Step 4: Create API Data Source
+
+Define API endpoints using manual Dio calls.
+
+**Location**: `lib/data/data_sources/api_data_source.dart`
+
+```dart
+// lib/data/data_sources/api_data_source.dart
+import 'package:dio/dio.dart';
+import 'package:project_name/data/dto/user/user_dto.dart';
+import 'package:project_name/data/dto/post/post_dto.dart';
+
+class ApiDataSource {
+  final Dio _dio;
+
+  ApiDataSource(this._dio);
+
+  // User endpoints
+  Future<UserDto> getCurrentUser() async {
+    final response = await _dio.get('/users/me');
+    return UserDto.fromJson(response.data);
+  }
+
+  Future<UserDto> getUserById(String userId) async {
+    final response = await _dio.get('/users/$userId');
+    return UserDto.fromJson(response.data);
+  }
+
+  Future<UserDto> updateUser(String userId, UserDto user) async {
+    final response = await _dio.put(
+      '/users/$userId',
+      data: user.toJson(),
+    );
+    return UserDto.fromJson(response.data);
+  }
+
+  Future<void> deleteUser(String userId) async {
+    await _dio.delete('/users/$userId');
+  }
+
+  // Post endpoints
+  Future<List<PostDto>> getPosts({int? page, int? limit}) async {
+    final response = await _dio.get(
+      '/posts',
+      queryParameters: {
+        if (page != null) 'page': page,
+        if (limit != null) 'limit': limit,
+      },
+    );
+    return (response.data as List)
+        .map((json) => PostDto.fromJson(json))
+        .toList();
+  }
+
+  Future<PostDto> getPostById(int postId) async {
+    final response = await _dio.get('/posts/$postId');
+    return PostDto.fromJson(response.data);
+  }
+
+  Future<PostDto> createPost(PostDto post) async {
+    final response = await _dio.post(
+      '/posts',
+      data: post.toJson(),
+    );
+    return PostDto.fromJson(response.data);
+  }
+
+  Future<PostDto> updatePost(int postId, PostDto post) async {
+    final response = await _dio.put(
+      '/posts/$postId',
+      data: post.toJson(),
+    );
+    return PostDto.fromJson(response.data);
+  }
+
+  Future<void> deletePost(int postId) async {
+    await _dio.delete('/posts/$postId');
+  }
+
+  // Search and filters
+  Future<List<PostDto>> searchPosts(String query, String? authorId) async {
+    final response = await _dio.get(
+      '/posts/search',
+      queryParameters: {
+        'q': query,
+        if (authorId != null) 'author_id': authorId,
+      },
+    );
+    return (response.data as List)
+        .map((json) => PostDto.fromJson(json))
+        .toList();
+  }
+
+  // Upload file
+  Future<Map<String, dynamic>> uploadFile(String filePath) async {
+    final formData = FormData.fromMap({
+      'file': await MultipartFile.fromFile(filePath),
+    });
+    final response = await _dio.post('/upload', data: formData);
+    return response.data as Map<String, dynamic>;
+  }
+}
+```
+
+**Key Points**:
+- Manual HTTP calls with Dio
+- Path parameters using string interpolation
+- Query parameters using `queryParameters` map
+- Request body using `data` parameter with `toJson()`
+- Response parsing with manual `fromJson()` calls
+- File uploads using `FormData` and `MultipartFile`
+
+## Creating DTOs
+
+DTOs (Data Transfer Objects) represent the API response/request format.
+
+### Basic DTO
+
+**Location**: `lib/data/dto/user/user_dto.dart`
+
+```dart
+// lib/data/dto/user/user_dto.dart
+import 'package:project_name/domain/entities/user/user.dart';
+
+class UserDto {
+  final String id;
+  final String email;
+  final String name;
+  final String? profilePictureUrl;
+  final String createdAt;
+  final String? updatedAt;
+
+  const UserDto({
+    required this.id,
+    required this.email,
+    required this.name,
+    this.profilePictureUrl,
+    required this.createdAt,
+    this.updatedAt,
+  });
+
+  factory UserDto.fromJson(Map<String, dynamic> json) {
+    return UserDto(
+      id: json['id'] as String,
+      email: json['email'] as String,
+      name: json['name'] as String,
+      profilePictureUrl: json['profile_picture_url'] as String?,
+      createdAt: json['created_at'] as String,
+      updatedAt: json['updated_at'] as String?,
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'id': id,
+      'email': email,
+      'name': name,
+      if (profilePictureUrl != null) 'profile_picture_url': profilePictureUrl,
+      'created_at': createdAt,
+      if (updatedAt != null) 'updated_at': updatedAt,
+    };
+  }
+}
+```
+
+### DTO with Nested Objects
+
+```dart
+// lib/data/dto/post/post_dto.dart
+import 'package:project_name/data/dto/user/user_dto.dart';
+import 'package:project_name/domain/entities/post/post.dart';
+
+class PostDto {
+  final int id;
+  final String title;
+  final String content;
+  final String authorId;
+  final UserDto? author; // Nested object
+  final String createdAt;
+  final String? updatedAt;
+  final int likesCount;
+
+  const PostDto({
+    required this.id,
+    required this.title,
+    required this.content,
+    required this.authorId,
+    this.author,
+    required this.createdAt,
+    this.updatedAt,
+    this.likesCount = 0,
+  });
+
+  factory PostDto.fromJson(Map<String, dynamic> json) {
+    return PostDto(
+      id: json['id'] as int,
+      title: json['title'] as String,
+      content: json['content'] as String,
+      authorId: json['author_id'] as String,
+      author: json['author'] != null 
+          ? UserDto.fromJson(json['author'] as Map<String, dynamic>)
+          : null,
+      createdAt: json['created_at'] as String,
+      updatedAt: json['updated_at'] as String?,
+      likesCount: json['likes_count'] as int? ?? 0,
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'id': id,
+      'title': title,
+      'content': content,
+      'author_id': authorId,
+      if (author != null) 'author': author!.toJson(),
+      'created_at': createdAt,
+      if (updatedAt != null) 'updated_at': updatedAt,
+      'likes_count': likesCount,
+    };
+  }
+}
+```
+
+### DTO Mapping to Domain Entity
+
+Create extension methods for conversion.
+
+```dart
+// Extension to convert DTO to Domain Entity
+extension UserDtoX on UserDto {
+  User toDomain() {
+    return User(
+      id: id,
+      email: email,
+      name: name,
+      profilePictureUrl: profilePictureUrl,
+      createdAt: DateTime.parse(createdAt),
+      updatedAt: updatedAt != null ? DateTime.parse(updatedAt!) : null,
+    );
+  }
+}
+
+// Extension to convert Domain Entity to DTO
+extension UserX on User {
+  UserDto toDto() {
+    return UserDto(
+      id: id,
+      email: email,
+      name: name,
+      profilePictureUrl: profilePictureUrl,
+      createdAt: createdAt.toIso8601String(),
+      updatedAt: updatedAt?.toIso8601String(),
+    );
+  }
+}
+```
+
+### DTO with Custom Deserialization
+
+For complex API responses:
+
+```dart
+// lib/data/dto/api_response_dto.dart
+import 'package:freezed_annotation/freezed_annotation.dart';
+
+part 'api_response_dto.freezed.dart';
+part 'api_response_dto.g.dart';
+
+@Freezed(genericArgumentFactories: true)
+class ApiResponseDto<T> with _$ApiResponseDto<T> {
+  const factory ApiResponseDto({
+    required bool success,
+    required T data,
+    String? message,
+    @JsonKey(name: 'error_code') String? errorCode,
+  }) = _ApiResponseDto;
+
+  factory ApiResponseDto.fromJson(
+    Map<String, dynamic> json,
+    T Function(Object?) fromJsonT,
+  ) => _$ApiResponseDtoFromJson(json, fromJsonT);
+}
+
+// Usage in API Data Source
+@GET('/posts')
+Future<ApiResponseDto<List<PostDto>>> getPostsWrapped();
+```
+
+### DTO with Enums
+
+```dart
+// lib/core/enums/post_status.dart
+enum PostStatus {
+  @JsonValue('draft')
+  draft,
+  @JsonValue('published')
+  published,
+  @JsonValue('archived')
+  archived,
+}
+
+// In DTO
+@freezed
+class PostDto with _$PostDto {
+  const factory PostDto({
+    required int id,
+    required String title,
+    required PostStatus status, // Enum field
+    // ...
+  }) = _PostDto;
+
+  factory PostDto.fromJson(Map<String, dynamic> json) => 
+      _$PostDtoFromJson(json);
+}
+```
+
+## Implementing Repositories
+
+Repositories implement the domain interfaces and use data sources.
+
+### Basic Repository Implementation
+
+**Location**: `lib/data/repositories/user_repo_impl.dart`
+
+```dart
+// lib/data/repositories/user_repo_impl.dart
+import 'package:dartz/dartz.dart';
+import 'package:dio/dio.dart';
+import 'package:project_name/data/data_sources/api_data_source.dart';
+import 'package:project_name/data/dto/user/user_dto.dart';
+import 'package:project_name/domain/entities/user/user.dart';
+import 'package:project_name/domain/repositories/user_repo.dart';
+import 'package:project_name/utils/app_error.dart';
+
+class UserRepoImpl implements UserRepo {
+  final ApiDataSource _apiDataSource;
+
+  UserRepoImpl(this._apiDataSource);
+
+  @override
+  Future<Either<AppError, User>> getCurrentUser() async {
+    try {
+      final userDto = await _apiDataSource.getCurrentUser();
+      return Right(userDto.toDomain());
+    } on DioException catch (e) {
+      return Left(_handleDioError(e));
+    } catch (e) {
+      return Left(AppError(message: 'Unexpected error: ${e.toString()}'));
+    }
+  }
+
+  @override
+  Future<Either<AppError, User>> updateUser(User user) async {
+    try {
+      final userDto = await _apiDataSource.updateUser(
+        user.id,
+        user.toDto(),
+      );
+      return Right(userDto.toDomain());
+    } on DioException catch (e) {
+      return Left(_handleDioError(e));
+    } catch (e) {
+      return Left(AppError(message: 'Unexpected error: ${e.toString()}'));
+    }
+  }
+
+  @override
+  Future<Either<AppError, void>> deleteUser() async {
+    try {
+      // Assuming you have userId available, perhaps from auth service
+      await _apiDataSource.deleteUser('current-user-id');
+      return const Right(null);
+    } on DioException catch (e) {
+      return Left(_handleDioError(e));
+    } catch (e) {
+      return Left(AppError(message: 'Unexpected error: ${e.toString()}'));
+    }
+  }
+
+  AppError _handleDioError(DioException error) {
+    switch (error.type) {
+      case DioExceptionType.connectionTimeout:
+      case DioExceptionType.sendTimeout:
+      case DioExceptionType.receiveTimeout:
+        return AppError(
+          message: 'Connection timeout. Please check your internet.',
+          statusCode: 408,
+        );
+      case DioExceptionType.badResponse:
+        return AppError(
+          message: error.response?.data['message'] ?? 'Server error',
+          statusCode: error.response?.statusCode,
+        );
+      case DioExceptionType.cancel:
+        return AppError(message: 'Request cancelled');
+      case DioExceptionType.connectionError:
+        return AppError(message: 'No internet connection');
+      default:
+        return AppError(message: error.message ?? 'Unknown error');
+    }
+  }
+}
+```
+
+### Repository with Multiple Data Sources
+
+Combine API and local storage for offline support.
+
+```dart
+// lib/data/repositories/post_repo_impl.dart
+import 'package:dartz/dartz.dart';
+import 'package:project_name/data/data_sources/api_data_source.dart';
+import 'package:project_name/data/data_sources/local_data_source.dart';
+import 'package:project_name/domain/entities/post/post.dart';
+import 'package:project_name/domain/repositories/post_repo.dart';
+import 'package:project_name/utils/app_error.dart';
+
+class PostRepoImpl implements PostRepo {
+  final ApiDataSource _apiDataSource;
+  final LocalDataSource _localDataSource;
+
+  PostRepoImpl(this._apiDataSource, this._localDataSource);
+
+  @override
+  Future<Either<AppError, List<Post>>> getPosts() async {
+    try {
+      // Try to fetch from API
+      final dtos = await _apiDataSource.getPosts();
+      final posts = dtos.map((dto) => dto.toDomain()).toList();
+      
+      // Cache the results locally
+      await _localDataSource.cachePosts(dtos);
+      
+      return Right(posts);
+    } on DioException catch (e) {
+      // If API fails, try to get from cache
+      try {
+        final cachedDtos = await _localDataSource.getCachedPosts();
+        if (cachedDtos.isNotEmpty) {
+          final posts = cachedDtos.map((dto) => dto.toDomain()).toList();
+          return Right(posts);
+        }
+      } catch (_) {
+        // Cache also failed
+      }
+      
+      return Left(AppError(
+        message: e.response?.data['message'] ?? 'Failed to fetch posts',
+        statusCode: e.response?.statusCode,
+      ));
+    }
+  }
+
+  @override
+  Future<Either<AppError, Post>> createPost(Post post) async {
+    try {
+      final dto = await _apiDataSource.createPost(post.toDto());
+      return Right(dto.toDomain());
+    } on DioException catch (e) {
+      return Left(AppError(
+        message: e.response?.data['message'] ?? 'Failed to create post',
+        statusCode: e.response?.statusCode,
+      ));
+    }
+  }
+
+  @override
+  Future<Either<AppError, void>> deletePost(int id) async {
+    try {
+      await _apiDataSource.deletePost(id);
+      
+      // Also remove from local cache
+      await _localDataSource.deletePostFromCache(id);
+      
+      return const Right(null);
+    } on DioException catch (e) {
+      return Left(AppError(
+        message: e.response?.data['message'] ?? 'Failed to delete post',
+        statusCode: e.response?.statusCode,
+      ));
+    }
+  }
+}
+```
+
+## Error Handling
+
+### Create App Error Model
+
+**Location**: `lib/core/utils/app_error.dart`
+
+```dart
+// lib/core/utils/app_error.dart
+class AppError {
+  final String message;
+  final int? statusCode;
+  final String? errorCode;
+  final dynamic originalError;
+
+  AppError({
+    required this.message,
+    this.statusCode,
+    this.errorCode,
+    this.originalError,
+  });
+
+  bool get isNetworkError => 
+      statusCode == null || statusCode == 0 || statusCode == 408;
+
+  bool get isServerError => 
+      statusCode != null && statusCode! >= 500;
+
+  bool get isClientError => 
+      statusCode != null && statusCode! >= 400 && statusCode! < 500;
+
+  bool get isUnauthorized => statusCode == 401;
+
+  bool get isForbidden => statusCode == 403;
+
+  bool get isNotFound => statusCode == 404;
+
+  @override
+  String toString() => 'AppError: $message (code: $statusCode)';
+}
+```
+
+### Centralized Error Handler
+
+```dart
+// lib/data/network/error_handler.dart
+import 'package:dio/dio.dart';
+import 'package:project_name/core/utils/app_error.dart';
+
+class ErrorHandler {
+  static AppError handleError(dynamic error) {
+    if (error is DioException) {
+      return _handleDioError(error);
+    } else if (error is AppError) {
+      return error;
+    } else {
+      return AppError(
+        message: 'Unexpected error: ${error.toString()}',
+        originalError: error,
+      );
+    }
+  }
+
+  static AppError _handleDioError(DioException error) {
+    switch (error.type) {
+      case DioExceptionType.connectionTimeout:
+      case DioExceptionType.sendTimeout:
+      case DioExceptionType.receiveTimeout:
+        return AppError(
+          message: 'Connection timeout. Please try again.',
+          statusCode: 408,
+          originalError: error,
+        );
+
+      case DioExceptionType.badResponse:
+        final statusCode = error.response?.statusCode;
+        final responseData = error.response?.data;
+        
+        String message = 'Something went wrong';
+        if (responseData is Map<String, dynamic>) {
+          message = responseData['message'] ?? 
+                   responseData['error'] ?? 
+                   message;
+        }
+        
+        return AppError(
+          message: message,
+          statusCode: statusCode,
+          errorCode: responseData is Map ? responseData['error_code'] : null,
+          originalError: error,
+        );
+
+      case DioExceptionType.cancel:
+        return AppError(
+          message: 'Request cancelled',
+          originalError: error,
+        );
+
+      case DioExceptionType.connectionError:
+        return AppError(
+          message: 'No internet connection',
+          statusCode: 0,
+          originalError: error,
+        );
+
+      default:
+        return AppError(
+          message: error.message ?? 'Unknown error occurred',
+          originalError: error,
+        );
+    }
+  }
+}
+```
+
+## Local Data Sources
+
+### Using SharedPreferences
+
+**Location**: `lib/data/data_sources/local_data_source.dart`
+
+```dart
+// lib/data/data_sources/local_data_source.dart
+import 'dart:convert';
+import 'package:injectable/injectable.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:project_name/data/dto/post/post_dto.dart';
+
+@lazySingleton
+class LocalDataSource {
+  final SharedPreferences _prefs;
+
+  LocalDataSource(this._prefs);
+
+  // Cache posts
+  Future<void> cachePosts(List<PostDto> posts) async {
+    final jsonList = posts.map((post) => post.toJson()).toList();
+    final jsonString = jsonEncode(jsonList);
+    await _prefs.setString('cached_posts', jsonString);
+  }
+
+  // Get cached posts
+  Future<List<PostDto>> getCachedPosts() async {
+    final jsonString = _prefs.getString('cached_posts');
+    if (jsonString == null) return [];
+    
+    final jsonList = jsonDecode(jsonString) as List;
+    return jsonList.map((json) => PostDto.fromJson(json)).toList();
+  }
+
+  // Delete post from cache
+  Future<void> deletePostFromCache(int postId) async {
+    final posts = await getCachedPosts();
+    final updatedPosts = posts.where((post) => post.id != postId).toList();
+    await cachePosts(updatedPosts);
+  }
+
+  // Clear all cache
+  Future<void> clearCache() async {
+    await _prefs.remove('cached_posts');
+  }
+
+  // Save single value
+  Future<void> saveString(String key, String value) async {
+    await _prefs.setString(key, value);
+  }
+
+  String? getString(String key) {
+    return _prefs.getString(key);
+  }
+
+  Future<void> saveBool(String key, bool value) async {
+    await _prefs.setBool(key, value);
+  }
+
+  bool? getBool(String key) {
+    return _prefs.getBool(key);
+  }
+}
+```
+
+### Register SharedPreferences
+
+```dart
+// lib/data/data_sources/local_data_source.dart (module)
+@module
+abstract class LocalStorageModule {
+  @preResolve
+  @lazySingleton
+  Future<SharedPreferences> sharedPreferences() => 
+      SharedPreferences.getInstance();
+}
+```
+
+## Best Practices
+
+### 1. Always Use DTOs for API Communication
+
+```dart
+// ✅ Good - Use DTO
+final dto = await _apiDataSource.getUser();
+final user = dto.toDomain();
+
+// ❌ Bad - Don't use domain entity directly
+final user = await _apiDataSource.getUser(); // Returns User (domain entity)
+```
+
+### 2. Handle All Error Types
+
+```dart
+// ✅ Good - Comprehensive error handling
+try {
+  final dto = await _apiDataSource.getUser();
+  return Right(dto.toDomain());
+} on DioException catch (e) {
+  return Left(_handleDioError(e));
+} catch (e) {
+  return Left(AppError(message: 'Unexpected error: ${e.toString()}'));
+}
+
+// ❌ Bad - Generic catch
+try {
+  final dto = await _apiDataSource.getUser();
+  return Right(dto.toDomain());
+} catch (e) {
+  return Left(AppError(message: e.toString()));
+}
+```
+
+### 3. Use Proper HTTP Methods
+
+- `GET`: Retrieve data (no body)
+- `POST`: Create new resource
+- `PUT`: Update entire resource
+- `PATCH`: Partial update
+- `DELETE`: Remove resource
+
+### 4. Add Request/Response Logging in Development
+
+```dart
+// Only in debug mode
+if (kDebugMode) {
+  dio.interceptors.add(LoggingInterceptor());
+}
+```
+
+### 5. Cache Strategically
+
+```dart
+// Strategy 1: Cache-first, then network
+Future<Either<AppError, List<Post>>> getPosts() async {
+  // Return cached data immediately
+  final cachedPosts = await _getCachedPosts();
+  
+  // Fetch fresh data in background
+  _fetchAndCachePosts();
+  
+  return Right(cachedPosts);
+}
+
+// Strategy 2: Network-first, fallback to cache
+Future<Either<AppError, List<Post>>> getPosts() async {
+  try {
+    final posts = await _fetchFromNetwork();
+    await _cachePosts(posts);
+    return Right(posts);
+  } catch (e) {
+    final cachedPosts = await _getCachedPosts();
+    return Right(cachedPosts);
+  }
+}
+```
+
+### 6. Use Proper Status Code Checks
+
+```dart
+if (response.statusCode == 200) {
+  // Success
+} else if (response.statusCode == 401) {
+  // Unauthorized - logout user
+} else if (response.statusCode == 403) {
+  // Forbidden - show permission error
+} else if (response.statusCode == 404) {
+  // Not found
+} else if (response.statusCode! >= 500) {
+  // Server error
+}
+```
+
+### 7. Validate Data Before Mapping
+
+```dart
+extension UserDtoX on UserDto {
+  User toDomain() {
+    // Validate email format
+    if (!email.contains('@')) {
+      throw Exception('Invalid email format');
+    }
+    
+    return User(
+      id: id,
+      email: email,
+      name: name.trim(), // Clean data
+      createdAt: DateTime.parse(createdAt),
+    );
+  }
+}
+```
+
+## Complete Examples
+
+### Example 1: Complete User Repository
+
+```dart
+@Injectable(as: UserRepo)
+class UserRepoImpl implements UserRepo {
+  final ApiDataSource _apiDataSource;
+  final LocalDataSource _localDataSource;
+
+  UserRepoImpl(this._apiDataSource, this._localDataSource);
+
+  @override
+  Future<Either<AppError, User>> getCurrentUser() async {
+    try {
+      final userDto = await _apiDataSource.getCurrentUser();
+      final user = userDto.toDomain();
+      
+      // Cache user locally
+      await _localDataSource.saveString('current_user', jsonEncode(userDto.toJson()));
+      
+      return Right(user);
+    } on DioException catch (e) {
+      return Left(_handleDioError(e));
+    } catch (e) {
+      return Left(AppError(message: 'Unexpected error: ${e.toString()}'));
+    }
+  }
+
+  @override
+  Future<Either<AppError, User>> updateUser(User user) async {
+    try {
+      final userDto = await _apiDataSource.updateUser(user.id, user.toDto());
+      
+      // Update local cache
+      await _localDataSource.saveString('current_user', jsonEncode(userDto.toJson()));
+      
+      return Right(userDto.toDomain());
+    } on DioException catch (e) {
+      return Left(_handleDioError(e));
+    } catch (e) {
+      return Left(AppError(message: 'Unexpected error: ${e.toString()}'));
+    }
+  }
+
+  AppError _handleDioError(DioException error) {
+    return ErrorHandler.handleError(error);
+  }
+}
+```
+
+### Example 2: Pagination Support
+
+```dart
+@RestApi()
+abstract class ApiDataSource {
+  @GET('/posts')
+  Future<PaginatedResponseDto<PostDto>> getPostsPaginated(
+    @Query('page') int page,
+    @Query('limit') int limit,
+  );
+}
+
+// DTO for paginated response
+@freezed
+class PaginatedResponseDto<T> with _$PaginatedResponseDto<T> {
+  const factory PaginatedResponseDto({
+    required List<T> data,
+    required int page,
+    required int totalPages,
+    required int totalItems,
+  }) = _PaginatedResponseDto;
+
+  factory PaginatedResponseDto.fromJson(
+    Map<String, dynamic> json,
+    T Function(Object?) fromJsonT,
+  ) => _$PaginatedResponseDtoFromJson(json, fromJsonT);
+}
+
+// Repository implementation
+@override
+Future<Either<AppError, PaginatedData<Post>>> getPostsPaginated(
+  int page,
+  int limit,
+) async {
+  try {
+    final response = await _apiDataSource.getPostsPaginated(page, limit);
+    
+    final paginatedData = PaginatedData<Post>(
+      items: response.data.map((dto) => dto.toDomain()).toList(),
+      page: response.page,
+      totalPages: response.totalPages,
+      totalItems: response.totalItems,
+    );
+    
+    return Right(paginatedData);
+  } on DioException catch (e) {
+    return Left(_handleDioError(e));
+  }
+}
+```
+
+### Example 3: File Upload
+
+```dart
+// API Data Source
+@POST('/upload')
+@MultiPart()
+Future<UploadResponseDto> uploadImage(
+  @Part(name: 'image') File image,
+  @Part(name: 'description') String? description,
+);
+
+// Repository
+@override
+Future<Either<AppError, String>> uploadProfilePicture(File image) async {
+  try {
+    final response = await _apiDataSource.uploadImage(image, 'profile_picture');
+    return Right(response.url);
+  } on DioException catch (e) {
+    return Left(_handleDioError(e));
+  }
+}
+```
+
+---
+
+## Summary Checklist
+
+### Data Source Setup
+- [ ] Configure Dio with base URL and timeouts
+- [ ] Add auth interceptor for token injection
+- [ ] Add logging interceptor for debugging
+- [ ] Define API endpoints with Retrofit
+- [ ] Run build_runner to generate code
+
+### DTO Creation
+- [ ] Create DTO with proper JSON annotations
+- [ ] Use `@JsonKey` for field name mapping
+- [ ] Add `fromJson` factory method
+- [ ] Create `toDomain()` extension
+- [ ] Create `toDto()` extension (if needed)
+- [ ] Run build_runner for code generation
+
+### Repository Implementation
+- [ ] Implement domain repository interface
+- [ ] Use `@Injectable(as: Interface)` annotation
+- [ ] Inject data sources via constructor
+- [ ] Convert DTOs to domain entities
+- [ ] Return `Either<AppError, T>` for all methods
+- [ ] Handle DioException specifically
+- [ ] Add generic exception handling
+- [ ] Consider caching strategy
+
+### Error Handling
+- [ ] Create AppError model
+- [ ] Handle network timeouts
+- [ ] Handle server errors (5xx)
+- [ ] Handle client errors (4xx)
+- [ ] Handle connection errors
+- [ ] Provide meaningful error messages
+
+**Remember**: The data layer implements the contracts defined by the domain layer. Always convert DTOs to domain entities at the repository boundary.
