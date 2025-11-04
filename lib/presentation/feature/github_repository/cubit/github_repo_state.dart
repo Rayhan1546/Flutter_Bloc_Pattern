@@ -1,37 +1,16 @@
+import 'package:junie_ai_test/core/state/async_state.dart';
 import 'package:junie_ai_test/domain/entities/github_repository/github_repository.dart';
 
 class GithubRepoState {
-  final bool isLoading;
-  final List<GithubRepo> repositories;
-  final List<GithubRepo> filteredRepositories;
-  final String? error;
+  final AsyncState<List<GithubRepo>> repositoriesState;
 
-  GithubRepoState({
-    required this.isLoading,
-    required this.repositories,
-    required this.filteredRepositories,
-    this.error,
-  });
+  GithubRepoState({required this.repositoriesState});
 
-  GithubRepoState.initial()
-    : this(
-        isLoading: false,
-        repositories: [],
-        filteredRepositories: [],
-        error: null,
-      );
+  GithubRepoState.initial() : this(repositoriesState: AsyncInitial());
 
-  GithubRepoState copyWith({
-    bool? isLoading,
-    List<GithubRepo>? repositories,
-    List<GithubRepo>? filteredRepositories,
-    String? Function()? error,
-  }) {
+  GithubRepoState copyWith({AsyncState<List<GithubRepo>>? repositoriesState}) {
     return GithubRepoState(
-      isLoading: isLoading ?? this.isLoading,
-      repositories: repositories ?? this.repositories,
-      filteredRepositories: filteredRepositories ?? this.filteredRepositories,
-      error: error != null ? error() : this.error,
+      repositoriesState: repositoriesState ?? this.repositoriesState,
     );
   }
 }

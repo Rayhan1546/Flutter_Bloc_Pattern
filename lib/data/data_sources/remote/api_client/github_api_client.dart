@@ -1,4 +1,3 @@
-import 'package:dio/dio.dart';
 import 'package:junie_ai_test/data/data_sources/remote/api_client/api_client.dart';
 
 /// GitHub API Client implementation
@@ -7,7 +6,7 @@ class GithubApiClient extends ApiClient {
   GithubApiClient(super.dio);
 
   @override
-  String get baseUrl => 'https://api.ithub.com';
+  String get baseUrl => 'https://api.github.com';
 
   @override
   Future<Map<String, String>> defaultHeader() async {
