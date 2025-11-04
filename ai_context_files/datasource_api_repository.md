@@ -28,25 +28,557 @@ The data layer is responsible for:
 ```
 lib/data/
 ├── data_sources/
-│   ├── api_data_source.dart          # Retrofit API interface
-│   ├── local_data_source.dart        # Local storage (SharedPreferences, SQLite)
-│   └── cache_data_source.dart        # Cache layer
+│   ├── remote/                              # Remote API service classes
+│   │   ├── api_client/                      # API Client abstraction
+│   │   │   ├── api_client.dart              # Abstract API client base class
+│   │   │   └── [feature]_api_client.dart    # Concrete API client implementation
+│   │   ├── [feature]_api_service.dart       # API service using ApiClient
+│   │   └── [another]_api_service.dart
+│   ├── api_data_source.dart                 # Main data source facade
+│   ├── local_data_source.dart               # Local storage (SharedPreferences, SQLite)
+│   └── cache_data_source.dart               # Cache layer
 ├── dto/
 │   └── [feature_name]/
-│       └── [entity]_dto.dart         # Data Transfer Objects
+│       └── [entity]_dto.dart                # Data Transfer Objects
 ├── repositories/
-│   └── [feature]_repo_impl.dart      # Repository implementations
+│   └── [feature]_repo_impl.dart             # Repository implementations
 ├── interceptors/
-│   ├── auth_interceptor.dart         # Add auth tokens
-│   ├── logging_interceptor.dart      # Log requests/responses
-│   └── error_interceptor.dart        # Handle errors globally
-└── mappers/                           # Optional: complex mapping logic
+│   ├── auth_interceptor.dart                # Add auth tokens
+│   ├── logging_interceptor.dart             # Log requests/responses
+│   └── error_interceptor.dart               # Handle errors globally
+└── mappers/                                  # Optional: complex mapping logic
     └── [entity]_mapper.dart
 ```
 
-## Setting Up API Data Source
+**Key Structure**:
+- **remote/api_client/**: Contains abstract ApiClient and concrete implementations
+- **remote/**: Contains API service classes that use ApiClient for HTTP calls
+- **api_data_source.dart**: Acts as a facade that aggregates all remote API services
+- Repository implementations use api_data_source, not individual API services
 
-### Step 1: Configure Dio Client
+**Architecture Layers**:
+1. **ApiClient** (abstract) → Defines HTTP methods (get, post, put, etc.)
+2. **Concrete ApiClient** (e.g., GithubApiClient) → Provides base URL and headers
+3. **API Services** → Use ApiClient to make HTTP calls
+4. **ApiDataSource** → Aggregates all API services
+5. **Repositories** → Use ApiDataSource
+
+## Setting Up API Client Abstraction
+
+### Overview of ApiClient Pattern
+
+The **ApiClient abstraction pattern** provides a layer between API services and Dio, allowing centralized HTTP method definitions and easier testing:
+
+1. **ApiClient** (abstract): Defines HTTP methods and requires base URL and headers
+2. **Concrete ApiClient**: Implements base URL and default headers for specific APIs
+3. **API Services**: Use ApiClient to make HTTP calls
+4. **ApiDataSource**: Aggregates multiple API services
+5. **Repositories**: Use ApiDataSource
+
+**Benefits**:
+- Centralized HTTP method definitions
+- Easy to swap between different APIs (dev, staging, prod)
+- Better testing with mockable ApiClient
+- Consistent header management
+- Simplified service implementations
+
+### Step 1: Create Abstract ApiClient
+
+Create the abstract ApiClient base class with all HTTP methods.
+
+**Location**: `lib/data/data_sources/remote/api_client/api_client.dart`
+
+```dart
+import 'dart:convert';
+import 'package:dio/dio.dart';
+
+/// Abstract API Client that provides HTTP methods
+/// Subclasses must provide baseUrl and defaultHeader implementation
+abstract class ApiClient {
+  final Dio _dio;
+
+  ApiClient(this._dio);
+
+  /// Base URL for API endpoints
+  String get baseUrl;
+
+  /// Default headers for requests
+  Future<Map<String, String>> defaultHeader();
+
+  /// GET request
+  Future<T> get<T>(
+    String endpoint, {
+    Map<String, dynamic>? queryParameters,
+    bool isAuthenticationRequired = true,
+  }) async {
+    final url = Uri.parse('$baseUrl/$endpoint').replace(
+      queryParameters: queryParameters?.map(
+        (key, value) => MapEntry(key, value.toString()),
+      ),
+    );
+
+    final options = Options(
+      headers: isAuthenticationRequired ? await defaultHeader() : null,
+    );
+
+    final response = await _dio.getUri(url, options: options);
+    return response.data as T;
+  }
+
+  /// POST request
+  Future<T> post<T>(
+    String endpoint, {
+    Map<String, dynamic>? data,
+    Map<String, String> headers = const {},
+    bool isAuthenticationRequired = true,
+  }) async {
+    final url = '$baseUrl/$endpoint';
+    
+    final mergedHeaders = isAuthenticationRequired
+        ? {...await defaultHeader(), ...headers}
+        : headers;
+
+    final options = Options(headers: mergedHeaders);
+
+    final response = await _dio.post(
+      url,
+      data: jsonEncode(data),
+      options: options,
+    );
+
+    return response.data as T;
+  }
+
+  /// POST multipart request for file uploads
+  Future<T> postMultipart<T>(
+    String endpoint, {
+    required Map<String, String> fields,
+    String? filePath,
+    String fileFieldName = 'file',
+    Map<String, String> headers = const {},
+    bool isAuthenticationRequired = true,
+  }) async {
+    final url = '$baseUrl/$endpoint';
+
+    final mergedHeaders = isAuthenticationRequired
+        ? {...await defaultHeader(), ...headers}
+        : headers;
+
+    mergedHeaders.remove('Content-Type');
+
+    final formData = FormData.fromMap(fields);
+
+    if (filePath != null && filePath.isNotEmpty) {
+      formData.files.add(
+        MapEntry(
+          fileFieldName,
+          await MultipartFile.fromFile(filePath),
+        ),
+      );
+    }
+
+    final options = Options(headers: mergedHeaders);
+
+    final response = await _dio.post(
+      url,
+      data: formData,
+      options: options,
+    );
+
+    return response.data as T;
+  }
+
+  /// PUT, PATCH, DELETE methods follow similar pattern...
+}
+```
+
+**Key Points**:
+- Abstract class with Dio dependency
+- Requires subclasses to implement `baseUrl` and `defaultHeader()`
+- All HTTP methods in one place
+- Supports authentication toggling
+- Handles query parameters and custom headers
+
+### Step 2: Create Concrete ApiClient Implementation
+
+Implement a concrete ApiClient for your specific API.
+
+**Location**: `lib/data/data_sources/remote/api_client/github_api_client.dart`
+
+```dart
+import 'package:dio/dio.dart';
+import 'package:project_name/data/data_sources/remote/api_client/api_client.dart';
+
+/// GitHub API Client implementation
+/// Provides base URL and default headers for GitHub API
+class GithubApiClient extends ApiClient {
+  GithubApiClient(super.dio);
+
+  @override
+  String get baseUrl => 'https://api.github.com';
+
+  @override
+  Future<Map<String, String>> defaultHeader() async {
+    return {
+      'Accept': 'application/vnd.github.v3+json',
+      'Content-Type': 'application/json',
+    };
+  }
+}
+```
+
+**For authenticated APIs**:
+
+```dart
+class AuthApiClient extends ApiClient {
+  final AuthService _authService;
+
+  AuthApiClient(super.dio, this._authService);
+
+  @override
+  String get baseUrl => 'https://api.myapp.com/v1';
+
+  @override
+  Future<Map<String, String>> defaultHeader() async {
+    final token = await _authService.getToken();
+    return {
+      'Authorization': 'Bearer $token',
+      'Content-Type': 'application/json',
+      'Accept': 'application/json',
+    };
+  }
+}
+```
+
+**Key Points**:
+- Extends ApiClient
+- Provides specific base URL
+- Implements custom headers (with or without auth)
+- Can inject additional dependencies (like AuthService)
+
+### Step 3: Create API Service Using ApiClient
+
+Create API services that use ApiClient for HTTP calls. Follow the **abstract interface + implementation pattern** for better testability and dependency inversion.
+
+#### Step 3a: Create Abstract API Service Interface
+
+**Location**: `lib/data/data_sources/remote/github_api_service.dart`
+
+```dart
+import 'package:project_name/data/dto/github_repository/github_repository_dto.dart';
+
+/// Abstract API service for GitHub endpoints
+/// Defines contracts for all GitHub API operations
+abstract class GithubApiService {
+  /// Fetches list of repositories from GitHub API
+  Future<List<GithubRepositoryDto>> getRepositories();
+
+  /// Fetches a specific repository by ID
+  Future<GithubRepositoryDto> getRepositoryById(int repoId);
+
+  /// Searches repositories by query
+  Future<List<GithubRepositoryDto>> searchRepositories({
+    required String query,
+    int? page,
+    int? perPage,
+  });
+
+  /// Fetches user repositories
+  Future<List<GithubRepositoryDto>> getUserRepositories(String username);
+}
+```
+
+#### Step 3b: Create Concrete API Service Implementation
+
+**Location**: `lib/data/data_sources/remote/github_api_service_impl.dart`
+
+```dart
+import 'package:project_name/data/data_sources/remote/api_client/api_client.dart';
+import 'package:project_name/data/data_sources/remote/github_api_service.dart';
+import 'package:project_name/data/dto/github_repository/github_repository_dto.dart';
+
+/// Implementation of GitHub API service
+/// Handles all HTTP requests using ApiClient abstraction
+class GithubApiServiceImpl implements GithubApiService {
+  final ApiClient _apiClient;
+
+  GithubApiServiceImpl(this._apiClient);
+
+  @override
+  Future<List<GithubRepositoryDto>> getRepositories() async {
+    final response = await _apiClient.get<List<dynamic>>('repositories');
+    return response.map((json) => GithubRepositoryDto.fromJson(json)).toList();
+  }
+
+  @override
+  Future<GithubRepositoryDto> getRepositoryById(int repoId) async {
+    final response = await _apiClient.get<Map<String, dynamic>>('repositories/$repoId');
+    return GithubRepositoryDto.fromJson(response);
+  }
+
+  @override
+  Future<List<GithubRepositoryDto>> searchRepositories({
+    required String query,
+    int? page,
+    int? perPage,
+  }) async {
+    final response = await _apiClient.get<Map<String, dynamic>>(
+      'search/repositories',
+      queryParameters: {
+        'q': query,
+        if (page != null) 'page': page,
+        if (perPage != null) 'per_page': perPage,
+      },
+    );
+    
+    final items = response['items'] as List;
+    return items.map((json) => GithubRepositoryDto.fromJson(json)).toList();
+  }
+
+  @override
+  Future<List<GithubRepositoryDto>> getUserRepositories(String username) async {
+    final response = await _apiClient.get<List<dynamic>>('users/$username/repos');
+    return response.map((json) => GithubRepositoryDto.fromJson(json)).toList();
+  }
+}
+```
+
+**Key Points**:
+- **Abstract interface** defines the contract without implementation
+- **Concrete implementation** provides actual HTTP logic using ApiClient
+- Uses ApiClient instead of Dio directly
+- Endpoints are relative paths (no base URL)
+- Generic type parameters for type safety
+- Follows dependency inversion principle
+- Easy to mock for testing
+
+### Step 4: Register Dependencies
+
+Register ApiClient and services in dependency injection. Follow the **interface + implementation pattern** for API services.
+
+**Location**: `lib/di/di_module.dart`
+
+```dart
+class DataModule implements DIModule {
+  @override
+  Future<void> register() async {
+    // Register API clients first
+    sl.registerSingleton<ApiClient>(
+      GithubApiClient(sl.get<Dio>()),
+    );
+
+    // Register API services by interface, instantiate implementation
+    sl.registerSingleton<GithubApiService>(
+      GithubApiServiceImpl(sl.get<ApiClient>()),
+    );
+
+    // Register ApiDataSource
+    sl.registerSingleton<ApiDataSource>(
+      ApiDataSource(sl.get<GithubApiService>()),
+    );
+
+    // Register repositories
+    sl.registerSingleton<GithubRepo>(
+      GithubRepoImpl(sl.get<ApiDataSource>()),
+    );
+  }
+}
+```
+
+**Registration Order**:
+1. Dio (in NetworkModule)
+2. ApiClient implementations
+3. API Services (use ApiClient) - **register interface type, instantiate implementation**
+4. ApiDataSource (uses API Services)
+5. Repositories (use ApiDataSource)
+
+**Key Points**:
+- Register by interface (ApiClient, GithubApiService) for easier testing
+- Instantiate concrete implementation (GithubApiServiceImpl) but register as interface type
+- Services depend on ApiClient interface, not concrete implementation
+- Clear dependency chain following dependency inversion principle
+- Easy to swap implementations for testing or different environments
+
+## Setting Up API Data Source with Remote Pattern
+
+### Overview of Remote Pattern
+
+The **remote pattern** separates API service classes from the main data source facade:
+
+1. **Remote API Services** (`data_sources/remote/`): Handle specific API endpoints using ApiClient
+2. **ApiDataSource** (`data_sources/api_data_source.dart`): Aggregates multiple API services
+3. **Repositories**: Use ApiDataSource, not individual API services
+
+**Benefits**:
+- Better separation of concerns
+- Easier to test individual API services
+- Cleaner organization as app grows
+- Repositories don't need to know about multiple API services
+
+### Step 1: Create Remote API Service
+
+Create specific API service classes for each feature in the `remote/` folder.
+
+**Location**: `lib/data/data_sources/remote/[feature]_api_service.dart`
+
+**Example: GitHub API Service**
+
+```dart
+// lib/data/data_sources/remote/github_api_service.dart
+import 'package:dio/dio.dart';
+import 'package:project_name/data/dto/github_repository/github_repository_dto.dart';
+
+/// API service for GitHub endpoints
+/// Handles all HTTP requests using Dio abstraction
+class GithubApiService {
+  final Dio _dio;
+
+  GithubApiService(this._dio);
+
+  /// Fetches list of repositories from GitHub API
+  Future<List<GithubRepositoryDto>> getRepositories() async {
+    final response = await _dio.get('https://api.github.com/repositories');
+    return (response.data as List)
+        .map((json) => GithubRepositoryDto.fromJson(json))
+        .toList();
+  }
+
+  /// Fetches a specific repository by ID
+  Future<GithubRepositoryDto> getRepositoryById(int repoId) async {
+    final response = await _dio.get('https://api.github.com/repositories/$repoId');
+    return GithubRepositoryDto.fromJson(response.data);
+  }
+
+  /// Searches repositories by query
+  Future<List<GithubRepositoryDto>> searchRepositories({
+    required String query,
+    int? page,
+    int? perPage,
+  }) async {
+    final response = await _dio.get(
+      'https://api.github.com/search/repositories',
+      queryParameters: {
+        'q': query,
+        if (page != null) 'page': page,
+        if (perPage != null) 'per_page': perPage,
+      },
+    );
+    
+    final items = response.data['items'] as List;
+    return items.map((json) => GithubRepositoryDto.fromJson(json)).toList();
+  }
+}
+```
+
+**Key Points**:
+- One API service per feature/domain
+- Uses Dio for all HTTP calls
+- Returns DTOs, not domain entities
+- Handles URL construction and query parameters
+- Throws DioException on errors (handled by repository)
+
+### Step 2: Create ApiDataSource Facade
+
+Create a facade that aggregates all API services.
+
+**Location**: `lib/data/data_sources/api_data_source.dart`
+
+```dart
+// lib/data/data_sources/api_data_source.dart
+import 'package:project_name/data/data_sources/remote/github_api_service.dart';
+import 'package:project_name/data/data_sources/remote/user_api_service.dart';
+import 'package:project_name/data/dto/github_repository/github_repository_dto.dart';
+import 'package:project_name/data/dto/user/user_dto.dart';
+
+/// Main data source that aggregates all API services
+/// Acts as a facade for remote API services
+class ApiDataSource {
+  final GithubApiService _githubApiService;
+  final UserApiService _userApiService;
+
+  ApiDataSource(this._githubApiService, this._userApiService);
+
+  // GitHub API methods
+  Future<List<GithubRepositoryDto>> getRepositories() async {
+    return await _githubApiService.getRepositories();
+  }
+
+  Future<GithubRepositoryDto> getRepositoryById(int repoId) async {
+    return await _githubApiService.getRepositoryById(repoId);
+  }
+
+  Future<List<GithubRepositoryDto>> searchRepositories({
+    required String query,
+    int? page,
+    int? perPage,
+  }) async {
+    return await _githubApiService.searchRepositories(
+      query: query,
+      page: page,
+      perPage: perPage,
+    );
+  }
+
+  // User API methods
+  Future<UserDto> getCurrentUser() async {
+    return await _userApiService.getCurrentUser();
+  }
+
+  Future<UserDto> updateUser(UserDto user) async {
+    return await _userApiService.updateUser(user);
+  }
+}
+```
+
+**Key Points**:
+- Aggregates multiple API services
+- Delegates calls to appropriate API service
+- Repositories depend on this, not individual services
+- Makes it easy to swap API services
+
+### Step 3: Register in Dependency Injection
+
+Register API services before ApiDataSource.
+
+**Location**: `lib/di/di_module.dart`
+
+```dart
+/// Data module - registers data sources and repositories
+class DataModule implements DIModule {
+  @override
+  Future<void> register() async {
+    // Register remote API services first
+    sl.registerSingleton<GithubApiService>(
+      GithubApiService(sl.get<Dio>()),
+    );
+    
+    sl.registerSingleton<UserApiService>(
+      UserApiService(sl.get<Dio>()),
+    );
+
+    // Register ApiDataSource that uses API services
+    sl.registerSingleton<ApiDataSource>(
+      ApiDataSource(
+        sl.get<GithubApiService>(),
+        sl.get<UserApiService>(),
+      ),
+    );
+
+    // Register repositories that use ApiDataSource
+    sl.registerSingleton<GithubRepo>(
+      GithubRepoImpl(sl.get<ApiDataSource>()),
+    );
+  }
+}
+```
+
+**Registration Order**:
+1. Dio (in NetworkModule)
+2. Remote API services (use Dio)
+3. ApiDataSource (uses API services)
+4. Repositories (use ApiDataSource)
+
+### Step 4: Configure Dio Client
 
 Create a Dio instance with base configuration.
 

@@ -1,5 +1,8 @@
 import 'package:dio/dio.dart';
-import 'package:junie_ai_test/data/data_sources/api_data_source.dart';
+import 'package:junie_ai_test/data/data_sources/remote/api_client/api_client.dart';
+import 'package:junie_ai_test/data/data_sources/remote/api_client/github_api_client.dart';
+import 'package:junie_ai_test/data/data_sources/remote/api_service/github_api_service.dart';
+import 'package:junie_ai_test/data/data_sources/remote/api_service/github_api_service_impl.dart';
 import 'package:junie_ai_test/data/repositories/github_repo_impl.dart';
 import 'package:junie_ai_test/domain/repositories/github_repo.dart';
 import 'package:junie_ai_test/domain/use_cases/get_repositories_use_case.dart';
@@ -38,11 +41,20 @@ class NetworkModule implements DIModule {
 class DataModule implements DIModule {
   @override
   Future<void> register() async {
-    // Register ApiDataSource as singleton
-    sl.registerSingleton<ApiDataSource>(ApiDataSource(sl.get<Dio>()));
+    // Register API clients
+    sl.registerSingleton<ApiClient>(
+      GithubApiClient(sl.get<Dio>()),
+    );
+
+    // Register remote API services
+    sl.registerSingleton<GithubApiService>(
+      GithubApiServiceImpl(sl.get<ApiClient>()),
+    );
 
     // Register GithubRepo implementation as singleton
-    sl.registerSingleton<GithubRepo>(GithubRepoImpl(sl.get<ApiDataSource>()));
+    sl.registerSingleton<GithubRepo>(
+      GithubRepoImpl(sl.get<GithubApiService>()),
+    );
   }
 }
 
