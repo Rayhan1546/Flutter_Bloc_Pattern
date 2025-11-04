@@ -1,13 +1,14 @@
-# Feature Creation Guide - Clean Architecture
+# Feature Creation Guide
 
-This guide provides step-by-step instructions for creating a new feature following Clean Architecture principles in Flutter.
+This guide explains how to create new features following your project's Clean Architecture patterns and coding style.
 
-## Table of Contents
-1. [Overview](#overview)
-2. [Layer Structure](#layer-structure)
-3. [Step-by-Step Feature Creation](#step-by-step-feature-creation)
-4. [Complete Example](#complete-example)
-5. [Checklist](#checklist)
+## Overview
+
+Your project follows a **Clean Architecture** pattern with clear separation between layers:
+- **Domain Layer**: Business logic, entities, and use cases
+- **Data Layer**: API clients, DTOs, and repository implementations  
+- **Presentation Layer**: UI components, state management (Cubits), and screens
+- **Core Layer**: Shared utilities, error handling, and state patterns
 
 ## Overview
 
@@ -120,6 +121,40 @@ class Post {
       updatedAt.hashCode;
 }
 ```
+
+## Key UI Component Patterns
+
+### 1. AsyncState Switch Expression Benefits
+
+Your switch expression pattern provides:
+- **Exhaustive handling**: All states must be handled
+- **Type safety**: Pattern matching with type inference
+- **Clean separation**: Each state has its own UI branch
+- **Empty state handling**: Built-in support for empty data scenarios
+
+### 2. Component Architecture Benefits
+
+- **Separation of concerns**: List logic separate from item rendering
+- **Reusability**: Components can be used in multiple contexts
+- **Testability**: Each component can be tested in isolation
+- **Maintainability**: Changes to list logic don't affect item rendering
+
+### 3. Error Handling Pattern
+
+The `ErrorRetryWidget` provides:
+- **Consistent error display**: Same error UI across features
+- **Retry functionality**: Built-in retry mechanism
+- **User-friendly messages**: Clear error communication
+
+### 4. Empty State Pattern
+
+Built-in handling for empty data:
+```dart
+AsyncSuccess<List<Post>>(:final data) when data.isEmpty =>
+  const Center(child: Text("No posts to show")),
+```
+
+This ensures users see helpful messages when there's no data to display.
 
 **Key Points**:
 - Use immutable fields (final)
@@ -423,7 +458,7 @@ class PostRepoImpl implements PostRepo {
 - Return `Result<T>` for all methods (Success or Error)
 - Handle different exception types (DioException, etc.)
 
-### Step 6: Define State
+### Step 6: Define State with Switch Expressions
 
 Create state classes using sealed classes for the presentation layer.
 
@@ -519,7 +554,7 @@ class PostsError extends PostsState {
 - Include data in success states
 - Use specific loading states for different operations if needed
 
-### Step 7: Create Cubit/Bloc
+### Step 7: Create Cubit/Bloc with Pattern Matching
 
 Create state management logic using Cubit.
 
@@ -603,21 +638,187 @@ class PostsCubit extends Cubit<PostsState> {
 - Use pattern matching (switch) to handle Result types
 - Emit appropriate sealed class states
 
-### Step 8: Create UI Page
+### Step 8: Create UI Components with Switch Expressions
 
-Create the UI page with BLoC integration.
+Create reusable UI components using modern Dart switch expressions for state handling.
 
-**Location**: `lib/presentation/[feature_name]/[feature]_page.dart`
+#### Main List Component with AsyncState Switch Pattern
+
+**Location**: `lib/presentation/[feature_name]/components/[feature]_list_component.dart`
 
 ```dart
-// lib/presentation/posts/posts_page.dart
+// lib/presentation/posts/components/post_list_component.dart
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:project_name/core/state/async_state.dart';
+import 'package:project_name/domain/entities/post/post.dart';
 import 'package:project_name/presentation/posts/cubit/posts_cubit.dart';
 import 'package:project_name/presentation/posts/cubit/posts_state.dart';
-import 'package:project_name/presentation/posts/widgets/post_item.dart';
+import 'package:project_name/presentation/common/widgets/error_retry_widget.dart';
+import 'package:project_name/presentation/posts/widgets/post_item_widget.dart';
+
+class PostListComponent extends StatelessWidget {
+  const PostListComponent({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    final cubit = context.read<PostsCubit>();
+
+    return BlocBuilder<PostsCubit, PostsState>(
+      builder: (context, state) {
+        return switch (state.postsState) {
+          // Loading state
+          AsyncLoading() => const Center(child: CircularProgressIndicator()),
+          
+          // Error state with retry
+          AsyncError(:final message) => ErrorRetryWidget(
+            error: message,
+            onTapRetry: () => cubit.loadPosts(),
+          ),
+          
+          // Empty data state
+          AsyncSuccess<List<Post>>(:final data) when data.isEmpty =>
+            const Center(child: Text("No posts to show")),
+          
+          // Success state with data
+          AsyncSuccess<List<Post>>(:final data) => ListView.builder(
+            itemCount: data.length,
+            itemBuilder: (context, index) {
+              final post = data[index];
+              return PostItemWidget(post: post);
+            },
+          ),
+          
+          // Default fallback
+          _ => const SizedBox.shrink(),
+        };
+      },
+    );
+  }
+}
+```
+
+#### Individual Item Widget
+
+**Location**: `lib/presentation/[feature_name]/widgets/[feature]_item_widget.dart`
+
+```dart
+// lib/presentation/posts/widgets/post_item_widget.dart
+import 'package:flutter/material.dart';
+import 'package:project_name/domain/entities/post/post.dart';
+
+class PostItemWidget extends StatelessWidget {
+  final Post post;
+
+  const PostItemWidget({super.key, required this.post});
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      child: ListTile(
+        leading: CircleAvatar(
+          backgroundImage: NetworkImage(post.authorAvatarUrl),
+          radius: 24,
+        ),
+        title: Text(
+          post.title,
+          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+        ),
+        subtitle: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const SizedBox(height: 4),
+            Text(
+              'By ${post.authorName} • ${post.createdAtFormatted}',
+              style: TextStyle(color: Colors.grey[600], fontSize: 12),
+            ),
+            if (post.content.isNotEmpty) ...[
+              const SizedBox(height: 4),
+              Text(
+                post.content,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(fontSize: 14),
+              ),
+            ],
+            const SizedBox(height: 4),
+            Row(
+              children: [
+                Icon(Icons.favorite, size: 14, color: Colors.grey[600]),
+                const SizedBox(width: 4),
+                Text('${post.likesCount}', style: TextStyle(fontSize: 12, color: Colors.grey[600])),
+                const SizedBox(width: 12),
+                Icon(Icons.comment, size: 14, color: Colors.grey[600]),
+                const SizedBox(width: 4),
+                Text('${post.commentsCount}', style: TextStyle(fontSize: 12, color: Colors.grey[600])),
+              ],
+            ),
+          ],
+        ),
+        isThreeLine: true,
+        onTap: () {
+          // Navigate to post detail
+          context.push('/posts/${post.id}');
+        },
+      ),
+    );
+  }
+}
+```
+
+### Step 9: Create Main UI Page
+
+Create the main UI page that orchestrates all components.
+
+**Location**: `lib/presentation/[feature_name]/view/[feature]_page.dart`
+
+```dart
+// lib/presentation/posts/view/posts_page.dart
+import 'package:flutter/material.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:project_name/di/service_locator.dart';
+import 'package:project_name/presentation/posts/cubit/posts_cubit.dart';
+import 'package:project_name/presentation/posts/components/post_list_component.dart';
+import 'package:project_name/presentation/posts/components/post_search_component.dart';
 
 class PostsPage extends StatelessWidget {
+  const PostsPage({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return BlocProvider(
+      create: (context) => sl.get<PostsCubit>()..loadPosts(),
+      child: Scaffold(
+        appBar: AppBar(
+          title: const Text('Posts'),
+          actions: [
+            IconButton(
+              icon: const Icon(Icons.add),
+              onPressed: () {
+                // Navigate to create post
+                context.push('/posts/create');
+              },
+            ),
+          ],
+        ),
+        body: const Column(
+          children: [
+            PostSearchComponent(),
+            Expanded(child: PostListComponent()),
+          ],
+        ),
+        floatingActionButton: FloatingActionButton(
+          onPressed: () {
+            context.push('/posts/create');
+          },
+          child: const Icon(Icons.add),
+        ),
+      ),
+    );
+  }
+}
+```
   final PostsCubit cubit;
 
   const PostsPage({super.key, required this.cubit});

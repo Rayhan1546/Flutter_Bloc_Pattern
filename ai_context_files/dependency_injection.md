@@ -1,589 +1,543 @@
-# Dependency Injection Guide - Custom Service Locator Pattern
+# Dependency Injection - Custom Service Locator Pattern
 
-This guide explains the custom dependency injection pattern used in this project without external DI packages.
-
-## Table of Contents
-1. [Overview](#overview)
-2. [Service Locator Pattern](#service-locator-pattern)
-3. [Module-Based Registration](#module-based-registration)
-4. [Registration Patterns](#registration-patterns)
-5. [Usage Examples](#usage-examples)
-6. [Best Practices](#best-practices)
+This document explains the custom Service Locator pattern used in your Flutter project, replacing external DI packages like get_it or injectable with a clean, manual implementation.
 
 ## Overview
 
-This project uses a **custom Service Locator pattern** instead of external DI packages like `get_it` or `injectable`. This provides:
+Your project uses a **custom Service Locator** pattern that provides:
+- ✅ **No external dependencies** - Pure Dart implementation
+- ✅ **Simple and lightweight** - Minimal overhead
+- ✅ **Type-safe** - Compile-time type checking
+- ✅ **Testable** - Easy to mock and reset
+- ✅ **Module-based** - Organized by architectural layers
 
-- **Full control** over dependency lifecycle
-- **No code generation** required
-- **Simple and lightweight** implementation
-- **Easy to understand** and maintain
-- **Modular organization** by layer
+## Architecture
 
-## Service Locator Pattern
-
-### Implementation
-
-**Location**: `lib/di/service_locator.dart`
+### Service Locator Class
 
 ```dart
-/// Service Locator for Dependency Injection
-/// This is a simple implementation without external DI packages
+// lib/di/service_locator.dart
 class ServiceLocator {
-  static final ServiceLocator _instance = ServiceLocator._internal();
-  
-  factory ServiceLocator() => _instance;
-  
-  ServiceLocator._internal();
-
   final Map<Type, dynamic> _services = {};
   final Map<Type, dynamic Function()> _factories = {};
 
-  /// Register a singleton instance
   void registerSingleton<T>(T instance) {
     _services[T] = instance;
   }
 
-  /// Register a factory function
   void registerFactory<T>(T Function() factory) {
     _factories[T] = factory;
   }
 
-  /// Get a registered service
   T get<T>() {
-    // Check if singleton exists
+    // Check singletons first
     if (_services.containsKey(T)) {
       return _services[T] as T;
     }
-
-    // Check if factory exists
+    
+    // Check factories
     if (_factories.containsKey(T)) {
-      return _factories[T]!() as T;
+      return _factories[T]!();
     }
-
-    throw Exception('Service of type $T is not registered');
+    
+    throw Exception('Service not found for type $T');
   }
 
-  /// Check if a service is registered
-  bool isRegistered<T>() {
+  bool contains<T>() {
     return _services.containsKey(T) || _factories.containsKey(T);
   }
 
-  /// Reset all services (useful for testing)
   void reset() {
     _services.clear();
     _factories.clear();
   }
 }
+
+// Global instance
+final sl = ServiceLocator();
 ```
 
 ### Key Features
 
-- **Singleton Pattern**: Single instance across the app
-- **Type-safe**: Uses Dart generics for type safety
-- **Two registration types**:
-  - `registerSingleton<T>()`: One instance shared everywhere
-  - `registerFactory<T>()`: New instance each time
-- **Simple retrieval**: `get<T>()` to fetch dependencies
-- **Test support**: `reset()` method for cleaning between tests
+1. **Singleton Registration**: Objects registered once and reused
+2. **Factory Registration**: New instance created each time
+3. **Type Safety**: Generic methods ensure compile-time type checking
+4. **Reset Capability**: Clear all registrations for testing
+5. **Existence Check**: Verify if a service is registered
 
 ## Module-Based Registration
 
-Dependencies are organized into modules by architectural layer.
-
 ### DIModule Interface
 
-**Location**: `lib/di/di_module.dart`
-
 ```dart
-/// Base module interface for dependency registration
+// lib/di/di_module.dart
 abstract class DIModule {
   Future<void> register();
 }
 ```
 
-### Global Service Locator Instance
+### Network Module
 
 ```dart
-/// Global service locator instance
-final sl = ServiceLocator();
+class NetworkModule extends DIModule {
+  @override
+  Future<void> register() async {
+    // Dio configuration
+    final dio = Dio();
+    dio.options.connectTimeout = const Duration(seconds: 30);
+    dio.options.receiveTimeout = const Duration(seconds: 30);
+    dio.options.sendTimeout = const Duration(seconds: 30);
+    
+    // Add interceptors
+    dio.interceptors.add(LogInterceptor(
+      request: true,
+      requestBody: true,
+      responseBody: true,
+      responseHeader: false,
+      error: true,
+    ));
+    
+    // Register Dio as singleton
+    sl.registerSingleton<Dio>(dio);
+  }
+}
 ```
 
-### Module Registration Order
-
-**Location**: `lib/di/register_modules.dart`
+### Data Module
 
 ```dart
-/// Registers all dependency injection modules
-/// 
-/// Modules are registered in order:
-/// 1. NetworkModule - Core network dependencies (Dio)
-/// 2. DataModule - Data sources and repositories
-/// 3. DomainModule - Use cases
-/// 4. PresentationModule - Cubits/Blocs
+class DataModule extends DIModule {
+  @override
+  Future<void> register() async {
+    // API Clients
+    sl.registerFactory<GithubApiClient>(() => 
+      GithubApiClient(sl.get<Dio>())
+    );
+    
+    // Repositories
+    sl.registerFactory<GithubRepository>(() => 
+      GithubRepositoryImpl(sl.get<GithubApiClient>())
+    );
+  }
+}
+```
+
+### Domain Module
+
+```dart
+class DomainModule extends DIModule {
+  @override
+  Future<void> register() async {
+    // Use Cases
+    sl.registerFactory<GetRepositoriesUseCase>(() => 
+      GetRepositoriesUseCase(sl.get<GithubRepository>())
+    );
+  }
+}
+```
+
+### Presentation Module
+
+```dart
+class PresentationModule extends DIModule {
+  @override
+  Future<void> register() async {
+    // Cubits/Blocs as factories (new instance each time)
+    sl.registerFactory<GithubRepoCubit>(() => 
+      GithubRepoCubit(sl.get<GetRepositoriesUseCase>())
+    );
+  }
+}
+```
+
+### Registration Order
+
+```dart
+// lib/di/register_modules.dart
 Future<void> registerModules() async {
   final modules = <DIModule>[
-    NetworkModule(),
-    DataModule(),
-    DomainModule(),
-    PresentationModule(),
+    NetworkModule(),      // Dio, network configuration
+    DataModule(),         // API clients, repositories
+    DomainModule(),       // Use cases
+    PresentationModule(), // Cubits/Blocs
   ];
-
+  
   for (final module in modules) {
     await module.register();
   }
 }
 ```
 
-**Important**: Modules must be registered in dependency order to ensure dependencies are available when needed.
+## Usage Patterns
 
-## Registration Patterns
-
-### Network Module
-
-Registers core network dependencies like Dio.
+### In Widgets
 
 ```dart
-/// Network module - registers Dio and network-related dependencies
-class NetworkModule implements DIModule {
-  @override
-  Future<void> register() async {
-    // Register Dio as singleton
-    sl.registerSingleton<Dio>(
-      Dio(
-        BaseOptions(
-          connectTimeout: const Duration(seconds: 30),
-          receiveTimeout: const Duration(seconds: 30),
-          headers: {
-            'Content-Type': 'application/json',
-            'Accept': 'application/json',
-          },
-        ),
-      ),
-    );
-  }
-}
-```
-
-**Pattern**: Network clients are singletons since they're expensive to create and should be reused.
-
-### Data Module
-
-Registers data sources and repository implementations.
-
-```dart
-/// Data module - registers data sources and repositories
-class DataModule implements DIModule {
-  @override
-  Future<void> register() async {
-    // Register ApiDataSource as singleton
-    sl.registerSingleton<ApiDataSource>(
-      ApiDataSource(sl.get<Dio>())
-    );
-
-    // Register GithubRepo implementation as singleton
-    sl.registerSingleton<GithubRepo>(
-      GithubRepoImpl(sl.get<ApiDataSource>())
-    );
-  }
-}
-```
-
-**Pattern**: 
-- Data sources are singletons (shared across app)
-- Repositories registered by interface type, not implementation
-- Constructor injection using `sl.get<T>()`
-
-### Domain Module
-
-Registers use cases.
-
-```dart
-/// Domain module - registers use cases
-class DomainModule implements DIModule {
-  @override
-  Future<void> register() async {
-    // Register GetRepositoriesUseCase as singleton
-    sl.registerSingleton<GetRepositoriesUseCase>(
-      GetRepositoriesUseCase(sl.get<GithubRepo>()),
-    );
-  }
-}
-```
-
-**Pattern**: Use cases can be singletons if they're stateless.
-
-### Presentation Module
-
-Registers Cubits/Blocs.
-
-```dart
-/// Presentation module - registers cubits/blocs as factories
-class PresentationModule implements DIModule {
-  @override
-  Future<void> register() async {
-    // Register GithubRepoCubit as factory (new instance each time)
-    sl.registerFactory<GithubRepoCubit>(
-      () => GithubRepoCubit(sl.get<GetRepositoriesUseCase>()),
-    );
-  }
-}
-```
-
-**Pattern**: Cubits/Blocs are factories (new instance for each screen/widget) to prevent state sharing between screens.
-
-## Usage Examples
-
-### App Initialization
-
-**Location**: `lib/main.dart`
-
-```dart
-import 'package:junie_ai_test/di/register_modules.dart';
-
+// lib/main.dart
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   
-  // Register all dependencies
+  // Register all modules
   await registerModules();
   
   runApp(const MyApp());
 }
 ```
 
-### Using Dependencies in Widgets
-
-**Pattern 1: BlocProvider with Factory**
+### In Screens
 
 ```dart
 class GithubRepoScreen extends StatelessWidget {
-  const GithubRepoScreen({super.key});
-
   @override
   Widget build(BuildContext context) {
     return BlocProvider(
       create: (context) => sl.get<GithubRepoCubit>()..loadRepositories(),
-      child: Scaffold(
-        appBar: AppBar(title: const Text('Repositories')),
-        body: const GithubRepoView(),
-      ),
+      child: Scaffold(...),
     );
   }
 }
 ```
 
-**Pattern 2: Direct Usage in Cubit**
+### In Use Cases
 
 ```dart
-class GithubRepoCubit extends Cubit<GithubRepoState> {
-  final GetRepositoriesUseCase _getRepositoriesUseCase;
-
-  // Dependency injected via constructor
-  GithubRepoCubit(this._getRepositoriesUseCase)
-    : super(const GithubRepoInitial());
-
-  Future<void> loadRepositories() async {
-    emit(const GithubRepoLoading());
-    final result = await _getRepositoriesUseCase();
-    result.fold(
-      (error) => emit(GithubRepoError(error.message)),
-      (repos) => emit(GithubRepoLoaded(
-        repositories: repos,
-        filteredRepositories: repos,
-      )),
-    );
+class GetRepositoriesUseCase {
+  final GithubRepository _githubRepo;
+  
+  GetRepositoriesUseCase(this._githubRepo);
+  
+  Future<Result<List<GithubRepo>>> call() async {
+    return await _githubRepo.getRepositories();
   }
 }
 ```
 
-### Testing with Service Locator
+## Testing with Service Locator
+
+### Reset Between Tests
 
 ```dart
 void main() {
-  late MockGetRepositoriesUseCase mockUseCase;
-  late GithubRepoCubit cubit;
-
-  setUp(() {
-    // Reset service locator before each test
+  setUp(() async {
+    // Clear all registrations
     sl.reset();
     
-    // Register mock dependencies
-    mockUseCase = MockGetRepositoriesUseCase();
-    sl.registerSingleton<GetRepositoriesUseCase>(mockUseCase);
-    
-    // Create cubit with mocked dependency
-    cubit = sl.get<GithubRepoCubit>();
+    // Register test modules
+    await registerTestModules();
   });
-
+  
   tearDown(() {
-    cubit.close();
     sl.reset();
-  });
-
-  test('loadRepositories emits loaded state on success', () async {
-    // Test implementation
   });
 }
+```
+
+### Mock Registration
+
+```dart
+// Register mock instead of real implementation
+sl.registerSingleton<GithubRepository>(
+  MockGithubRepository()
+);
+
+// Or register factory that returns mock
+sl.registerFactory<GithubRepository>(
+  () => MockGithubRepository()
+);
 ```
 
 ## Best Practices
 
-### 1. Register by Interface, Not Implementation
+### 1. Registration Order Matters
 
-✅ **Good**:
 ```dart
-// Register repository by interface
-sl.registerSingleton<GithubRepo>(
-  GithubRepoImpl(sl.get<ApiDataSource>())
-);
+// ✅ Correct order - dependencies first
+final modules = [
+  NetworkModule(),      // Dio
+  DataModule(),         // Needs Dio
+  DomainModule(),       // Needs repositories
+  PresentationModule(), // Needs use cases
+];
 
-// Retrieve by interface
-final repo = sl.get<GithubRepo>();
+// ❌ Wrong order - will fail
+final modules = [
+  PresentationModule(), // Needs use cases that aren't registered yet
+  DomainModule(),
+  DataModule(),
+  NetworkModule(),
+];
 ```
 
-❌ **Bad**:
-```dart
-// Register by implementation
-sl.registerSingleton<GithubRepoImpl>(
-  GithubRepoImpl(sl.get<ApiDataSource>())
-);
+### 2. Choose Singleton vs Factory Wisely
 
-// Tightly coupled to implementation
-final repo = sl.get<GithubRepoImpl>();
+```dart
+// ✅ Singleton - shared state, expensive to create
+sl.registerSingleton<Dio>(Dio());
+sl.registerSingleton<UserRepository>(UserRepositoryImpl());
+
+// ✅ Factory - no shared state, lightweight
+sl.registerFactory<GetUserUseCase>(() => GetUserUseCase(sl.get()));
+sl.registerFactory<ProfileCubit>(() => ProfileCubit(sl.get()));
 ```
 
-### 2. Choose Correct Registration Type
-
-**Singleton**: Use for stateless services
-- Network clients (Dio)
-- Data sources
-- Repositories
-- Stateless use cases
+### 3. Constructor Injection Pattern
 
 ```dart
-sl.registerSingleton<ApiDataSource>(ApiDataSource(dio));
-```
-
-**Factory**: Use for stateful components
-- Cubits/Blocs (have state)
-- Components that should be recreated
-
-```dart
-sl.registerFactory<GithubRepoCubit>(
-  () => GithubRepoCubit(sl.get<GetRepositoriesUseCase>())
-);
-```
-
-### 3. Respect Dependency Order
-
-Register modules in correct order:
-
-```dart
-1. NetworkModule    // No dependencies
-2. DataModule       // Depends on NetworkModule
-3. DomainModule     // Depends on DataModule
-4. PresentationModule // Depends on DomainModule
-```
-
-### 4. Use Constructor Injection
-
-✅ **Good**:
-```dart
+// ✅ Good - Constructor injection
 class GithubRepoCubit extends Cubit<GithubRepoState> {
-  final GetRepositoriesUseCase _useCase;
-
-  GithubRepoCubit(this._useCase) : super(const GithubRepoInitial());
+  final GetRepositoriesUseCase _getRepositoriesUseCase;
+  
+  GithubRepoCubit(this._getRepositoriesUseCase) 
+    : super(GithubRepoState.initial());
 }
-```
 
-❌ **Bad**:
-```dart
+// ❌ Bad - Direct service locator usage
 class GithubRepoCubit extends Cubit<GithubRepoState> {
-  late final GetRepositoriesUseCase _useCase;
-
-  GithubRepoCubit() : super(const GithubRepoInitial()) {
-    _useCase = sl.get<GetRepositoriesUseCase>(); // Service locator inside class
+  GithubRepoCubit() : super(GithubRepoState.initial());
+  
+  void loadData() {
+    final useCase = sl.get<GetRepositoriesUseCase>();
+    // ...
   }
 }
 ```
 
-### 5. Reset Service Locator in Tests
+### 4. Error Handling
 
 ```dart
+// ✅ Good - Handle missing services
+try {
+  final cubit = sl.get<GithubRepoCubit>();
+} catch (e) {
+  // Handle service not found error
+  debugPrint('Service not found: $e');
+}
+
+// ✅ Good - Check before getting
+if (sl.contains<GithubRepoCubit>()) {
+  final cubit = sl.get<GithubRepoCubit>();
+}
+```
+
+### 5. Module Organization
+
+```dart
+// ✅ Good - Separate modules by layer
+- NetworkModule: Dio, HTTP clients
+- DataModule: Repositories, API services
+- DomainModule: Use cases
+- PresentationModule: Cubits/Blocs
+
+// ❌ Bad - Mixed concerns
+class MixedModule extends DIModule {
+  @override
+  Future<void> register() async {
+    sl.registerSingleton(Dio()); // Network
+    sl.registerFactory(UserRepositoryImpl()); // Data
+    sl.registerFactory(GetUserUseCase()); // Domain
+    sl.registerFactory(ProfileCubit()); // Presentation
+  }
+}
+```
+
+## Comparison with External Packages
+
+| Feature | Custom Service Locator | get_it | injectable |
+|---------|---------------------|--------|------------|
+| External Dependencies | ❌ None | ✅ Required | ✅ Required |
+| Setup Complexity | 🟢 Simple | 🟡 Medium | 🔴 Complex |
+| Code Generation | ❌ None | ❌ None | ✅ Required |
+| Type Safety | ✅ Compile-time | ✅ Compile-time | ✅ Compile-time |
+| Testability | ✅ Easy | ✅ Easy | ✅ Easy |
+| Performance | 🟢 Fast | 🟡 Medium | 🔴 Slower (code gen) |
+| Learning Curve | 🟢 Low | 🟡 Medium | 🔴 High |
+
+## Migration from get_it
+
+If you're migrating from get_it, here's the mapping:
+
+```dart
+// get_it syntax
+GetIt.I.registerSingleton<Dio>(Dio());
+GetIt.I.registerFactory<UserCubit>(() => UserCubit());
+final dio = GetIt.I.get<Dio>();
+
+// Custom Service Locator syntax
+sl.registerSingleton<Dio>(Dio());
+sl.registerFactory<UserCubit>(() => UserCubit());
+final dio = sl.get<Dio>();
+```
+
+## Common Patterns
+
+### Repository Pattern with DI
+
+```dart
+// Domain interface (no DI knowledge)
+abstract class GithubRepository {
+  Future<Result<List<GithubRepo>>> getRepositories();
+}
+
+// Data implementation (uses DI)
+class GithubRepositoryImpl implements GithubRepository {
+  final GithubApiClient _apiClient;
+  
+  GithubRepositoryImpl(this._apiClient);
+  
+  @override
+  Future<Result<List<GithubRepo>>> getRepositories() async {
+    try {
+      final response = await _apiClient.get('/repositories');
+      final dtos = (response as List)
+          .map((json) => GithubRepositoryDto.fromJson(json))
+          .toList();
+      final repos = dtos.map((dto) => dto.toDomain()).toList();
+      return Success(repos);
+    } catch (e) {
+      return Error(AppError(message: e.toString()));
+    }
+  }
+}
+```
+
+### Use Case Pattern with DI
+
+```dart
+class GetRepositoriesUseCase {
+  final GithubRepository _githubRepo;
+  
+  GetRepositoriesUseCase(this._githubRepo);
+  
+  Future<Result<List<GithubRepo>>> call() async {
+    return await _githubRepo.getRepositories();
+  }
+}
+```
+
+### Cubit Pattern with DI
+
+```dart
+class GithubRepoCubit extends Cubit<GithubRepoState> {
+  final GetRepositoriesUseCase _getRepositoriesUseCase;
+  
+  GithubRepoCubit(this._getRepositoriesUseCase) 
+    : super(GithubRepoState.initial());
+  
+  Future<void> loadRepositories() async {
+    emit(state.copyWith(repositoriesState: AsyncLoading()));
+    
+    final result = await _getRepositoriesUseCase();
+    
+    switch (result) {
+      case Success(:final data):
+        emit(state.copyWith(repositoriesState: AsyncSuccess(data)));
+      case Error(:final error):
+        emit(state.copyWith(repositoriesState: AsyncError(error.message)));
+    }
+  }
+}
+```
+
+## Troubleshooting
+
+### Service Not Found Error
+
+```dart
+// Error: Exception: Service not found for type GithubRepoCubit
+
+// Solution: Check registration order
+await registerModules(); // Make sure this is called
+
+// Solution: Verify registration
+print(sl.contains<GithubRepoCubit>()); // Should print: true
+```
+
+### Circular Dependency Error
+
+```dart
+// Problem: A needs B, B needs A
+class A {
+  final B b;
+  A(this.b);
+}
+
+class B {
+  final A a;
+  B(this.a);
+}
+
+// Solution: Use factory pattern or refactor
+sl.registerFactory<A>(() => A(sl.get<B>()));
+sl.registerFactory<B>(() => B(sl.get<A>())); // ❌ Circular
+
+// Better: Refactor to avoid circular dependencies
+```
+
+### Testing Issues
+
+```dart
+// Problem: Tests interfere with each other
+
+// Solution: Reset between tests
 setUp(() {
-  sl.reset(); // Clean slate for each test
-  // Register test dependencies
+  sl.reset();
+  registerTestModules();
 });
 
 tearDown(() {
-  sl.reset(); // Clean up after test
+  sl.reset();
 });
 ```
 
-### 6. Organize by Modules
+## Advanced Patterns
 
-Create separate module files when needed:
-
-```
-lib/di/
-├── service_locator.dart      # Core service locator
-├── di_module.dart            # All modules in one file
-├── register_modules.dart     # Module registration
-```
-
-For larger projects, split into separate files:
-
-```
-lib/di/
-├── service_locator.dart
-├── modules/
-│   ├── network_module.dart
-│   ├── data_module.dart
-│   ├── domain_module.dart
-│   └── presentation_module.dart
-└── register_modules.dart
-```
-
-## Adding New Features
-
-When adding a new feature, follow this pattern:
-
-### Step 1: Create Dependencies
+### Conditional Registration
 
 ```dart
-// 1. Create repository implementation
-class UserRepoImpl implements UserRepo {
-  final ApiDataSource _apiDataSource;
-  UserRepoImpl(this._apiDataSource);
-  // Implementation
-}
-
-// 2. Create use case
-class GetUserUseCase {
-  final UserRepo _userRepo;
-  GetUserUseCase(this._userRepo);
-  // Implementation
-}
-
-// 3. Create cubit
-class UserCubit extends Cubit<UserState> {
-  final GetUserUseCase _getUserUseCase;
-  UserCubit(this._getUserUseCase) : super(const UserInitial());
-  // Implementation
+class EnvironmentModule extends DIModule {
+  @override
+  Future<void> register() async {
+    if (kDebugMode) {
+      // Debug-specific services
+      sl.registerFactory<Logger>(() => DebugLogger());
+    } else {
+      // Production services
+      sl.registerFactory<Logger>(() => ProductionLogger());
+    }
+  }
 }
 ```
 
-### Step 2: Register in Modules
+### Scoped Dependencies
 
 ```dart
-// In DataModule
-class DataModule implements DIModule {
+class UserSessionModule extends DIModule {
   @override
   Future<void> register() async {
-    // ... existing registrations
+    // Register user-specific services
+    sl.registerSingleton<UserSession>(UserSession());
     
-    // Add new repository
-    sl.registerSingleton<UserRepo>(
-      UserRepoImpl(sl.get<ApiDataSource>())
+    // Register services that depend on user session
+    sl.registerFactory<UserService>(() => 
+      UserService(sl.get<UserSession>())
     );
   }
-}
-
-// In DomainModule
-class DomainModule implements DIModule {
-  @override
-  Future<void> register() async {
-    // ... existing registrations
-    
-    // Add new use case
-    sl.registerSingleton<GetUserUseCase>(
-      GetUserUseCase(sl.get<UserRepo>())
-    );
-  }
-}
-
-// In PresentationModule
-class PresentationModule implements DIModule {
-  @override
-  Future<void> register() async {
-    // ... existing registrations
-    
-    // Add new cubit
-    sl.registerFactory<UserCubit>(
-      () => UserCubit(sl.get<GetUserUseCase>())
-    );
+  
+  void unregister() {
+    // Remove user-specific services
+    sl._services.remove(UserSession);
+    sl._services.remove(UserService);
   }
 }
 ```
-
-### Step 3: Use in Widget
-
-```dart
-class UserScreen extends StatelessWidget {
-  const UserScreen({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    return BlocProvider(
-      create: (context) => sl.get<UserCubit>()..loadUser(),
-      child: const UserView(),
-    );
-  }
-}
-```
-
-## Comparison with Injectable/Get_it
-
-### This Approach (Custom Service Locator)
-
-**Pros**:
-- ✅ No code generation
-- ✅ Simple and transparent
-- ✅ Full control over lifecycle
-- ✅ Easy to debug
-- ✅ No external dependencies
-
-**Cons**:
-- ⚠️ Manual registration required
-- ⚠️ No compile-time dependency checking
-- ⚠️ More boilerplate for large projects
-
-### Injectable/Get_it Approach
-
-**Pros**:
-- ✅ Automatic registration with annotations
-- ✅ Less boilerplate
-- ✅ Environment-based registration
-
-**Cons**:
-- ❌ Requires code generation
-- ❌ Build runner overhead
-- ❌ Less transparent (generated code)
-- ❌ External dependencies
 
 ## Summary
 
-**Key Takeaways**:
+Your custom Service Locator provides:
+- **Simplicity**: No external dependencies or code generation
+- **Performance**: Direct object access with minimal overhead
+- **Flexibility**: Easy to extend and customize
+- **Testability**: Simple to mock and reset
+- **Maintainability**: Clear module organization
 
-1. **Custom service locator** eliminates code generation
-2. **Module-based organization** keeps dependencies organized by layer
-3. **Singleton vs Factory**: Choose based on statefulness
-4. **Register by interface**: Enables easy testing and swapping implementations
-5. **Constructor injection**: Dependencies passed explicitly
-6. **Order matters**: Register in dependency order
-7. **Reset in tests**: Clean slate for each test
-
-**When to Use This Pattern**:
-- ✅ Small to medium projects
-- ✅ Want to avoid code generation
-- ✅ Prefer simple, understandable code
-- ✅ Full control over DI lifecycle
-
-**When to Consider Injectable/Get_it**:
-- Large projects with many dependencies
-- Team prefers annotations over manual registration
-- Want compile-time dependency validation
-
----
-
-**Remember**: Dependency injection is about decoupling components, not about the tool. This custom pattern achieves the same goals as external packages while maintaining simplicity and transparency.
+This approach aligns with your clean architecture by keeping dependencies minimal while providing the flexibility needed for scalable applications.

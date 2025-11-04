@@ -16,38 +16,29 @@ class GithubRepoList extends StatelessWidget {
 
     return BlocBuilder<GithubRepoCubit, GithubRepoState>(
       builder: (context, state) {
-        final repositoriesState = state.repositoriesState;
+        return switch (state.repositoriesState) {
+          AsyncLoading() => const Center(child: CircularProgressIndicator()),
 
-        if (repositoriesState is AsyncLoading) {
-          return const Center(child: CircularProgressIndicator());
-        }
-
-        if (repositoriesState is AsyncError) {
-          final message = (repositoriesState as AsyncError).message;
-
-          return ErrorRetryWidget(
+          AsyncError(:final message) => ErrorRetryWidget(
             error: message,
             onTapRetry: () => cubit.loadRepositories(),
-          );
-        }
+          ),
 
-        if (repositoriesState is AsyncSuccess<List<GithubRepo>>) {
-          final data = repositoriesState.data;
+          AsyncSuccess<List<GithubRepo>>(:final data) when data.isEmpty =>
+            const Center(child: Text("No Repository to show")),
 
-          if (data.isEmpty) {
-            return const Center(child: Text("No Repository to show"));
-          }
+          AsyncSuccess<List<GithubRepo>>(:final data) => Expanded(
+            child: ListView.builder(
+              itemCount: data.length,
+              itemBuilder: (context, index) {
+                final repository = data[index];
+                return RepositoryItem(repository: repository);
+              },
+            ),
+          ),
 
-          return ListView.builder(
-            itemCount: data.length,
-            itemBuilder: (context, index) {
-              final repository = data[index];
-              return RepositoryItem(repository: repository);
-            },
-          );
-        }
-
-        return SizedBox.shrink();
+          _ => const SizedBox.shrink(),
+        };
       },
     );
   }

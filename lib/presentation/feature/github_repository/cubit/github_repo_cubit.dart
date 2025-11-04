@@ -34,10 +34,7 @@ class GithubRepoCubit extends Cubit<GithubRepoState> {
     }
 
     final filtered = repositoryList.where((repo) {
-      return repo.name.toLowerCase().contains(query.toLowerCase()) ||
-          repo.fullName.toLowerCase().contains(query.toLowerCase()) ||
-          (repo.description?.toLowerCase().contains(query.toLowerCase()) ??
-              false);
+      return repo.name.toLowerCase().contains(query.toLowerCase());
     }).toList();
 
     emit(state.copyWith(repositoriesState: AsyncSuccess(filtered)));

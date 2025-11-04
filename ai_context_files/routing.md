@@ -1,14 +1,16 @@
-# Routing Guide - Go Router Pattern
+# Routing and Navigation Guide
 
-This guide explains the routing pattern used in this project with `go_router`.
+This document explains the routing and navigation patterns used in your Flutter project, focusing on GoRouter implementation and navigation best practices.
 
-## Table of Contents
-1. [Overview](#overview)
-2. [Project Structure](#project-structure)
-3. [Implementation](#implementation)
-4. [Adding New Routes](#adding-new-routes)
-5. [Navigation Patterns](#navigation-patterns)
-6. [Best Practices](#best-practices)
+## Overview
+
+Your project uses **GoRouter** for navigation with:
+- ✅ **Declarative routing** with route definitions
+- ✅ **Type-safe navigation** with route names and paths
+- ✅ **Nested navigation** support
+- ✅ **Deep linking** capabilities
+- ✅ **Route guards** and redirection
+- ✅ **BlocProvider integration** for state management
 
 ## Overview
 

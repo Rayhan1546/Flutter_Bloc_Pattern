@@ -20,7 +20,7 @@ class GithubRepoScreen extends StatelessWidget {
         body: const Column(
           children: [
             GithubRepoSearchBar(),
-            Expanded(child: GithubRepoList()),
+            GithubRepoList(),
           ],
         ),
       ),

@@ -1,17 +1,24 @@
-# Data Source, API, and Repository Implementation Guide
+# Data Source, API Client, and Repository Patterns
 
-This guide provides detailed instructions for implementing the data layer components in Clean Architecture: Data Sources, API integration, and Repository implementations.
+This document explains the data layer architecture patterns used in your Flutter project, focusing on the custom ApiClient abstraction, DTO patterns, and repository implementations.
 
-## Table of Contents
-1. [Overview](#overview)
-2. [Data Layer Architecture](#data-layer-architecture)
-3. [Setting Up API Data Source](#setting-up-api-data-source)
-4. [Creating DTOs](#creating-dtos)
-5. [Implementing Repositories](#implementing-repositories)
-6. [Error Handling](#error-handling)
-7. [Local Data Sources](#local-data-sources)
-8. [Best Practices](#best-practices)
-9. [Complete Examples](#complete-examples)
+## Overview
+
+Your project implements a **layered data architecture** with:
+- ✅ **Abstract ApiClient** for HTTP operations
+- ✅ **DTO Pattern** for API data mapping
+- ✅ **Repository Pattern** for data access abstraction
+- ✅ **Extension Methods** for DTO to Domain conversion
+- ✅ **Error Handling** with custom Result<T> type
+
+## Architecture Overview
+
+```
+API Layer → DTO Layer → Repository Layer → Domain Layer
+    ↓           ↓            ↓              ↓
+  HTTP      Raw JSON    Business      Entities
+Response               Logic        (Pure Dart)
+```
 
 ## Overview
 
