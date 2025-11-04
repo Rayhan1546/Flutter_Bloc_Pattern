@@ -59,8 +59,8 @@ class GithubRepositoryDto {
 
 // Extension to convert DTO to Domain Entity
 extension GithubRepositoryDtoX on GithubRepositoryDto {
-  GithubRepository toDomain() {
-    return GithubRepository(
+  GithubRepo toDomain() {
+    return GithubRepo(
       id: id,
       nodeId: nodeId,
       name: name,

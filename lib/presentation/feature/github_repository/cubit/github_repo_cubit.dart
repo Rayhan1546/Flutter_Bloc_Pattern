@@ -7,56 +7,44 @@ class GithubRepoCubit extends Cubit<GithubRepoState> {
   final GetRepositoriesUseCase _getRepositoriesUseCase;
 
   GithubRepoCubit(this._getRepositoriesUseCase)
-    : super(const GithubRepoInitial());
+    : super(GithubRepoState.initial());
 
   Future<void> loadRepositories() async {
-    emit(const GithubRepoLoading());
+    emit(state.copyWith(isLoading: true, error: () => null));
 
     final result = await _getRepositoriesUseCase();
 
     switch (result) {
       case Success(:final data):
         emit(
-          GithubRepoLoaded(
+          state.copyWith(
+            isLoading: false,
             repositories: data,
             filteredRepositories: data,
+            error: () => null,
           ),
         );
       case Error(:final error):
-        emit(GithubRepoError(error.message));
+        emit(state.copyWith(isLoading: false, error: () => error.message));
     }
   }
 
   void searchRepositories(String query) {
-    final currentState = state;
-    if (currentState is GithubRepoLoaded) {
-      if (query.isEmpty) {
-        emit(
-          GithubRepoLoaded(
-            repositories: currentState.repositories,
-            filteredRepositories: currentState.repositories,
-          ),
-        );
-      } else {
-        final filtered = currentState.repositories
-            .where(
-              (repo) =>
-                  repo.name.toLowerCase().contains(query.toLowerCase()) ||
-                  repo.fullName.toLowerCase().contains(query.toLowerCase()) ||
-                  (repo.description?.toLowerCase().contains(
-                        query.toLowerCase(),
-                      ) ??
-                      false),
-            )
-            .toList();
-
-        emit(
-          GithubRepoLoaded(
-            repositories: currentState.repositories,
-            filteredRepositories: filtered,
-          ),
-        );
-      }
+    if (query.isEmpty) {
+      emit(state.copyWith(filteredRepositories: state.repositories));
+      return;
     }
+
+    final filtered = state.repositories
+        .where(
+          (repo) =>
+              repo.name.toLowerCase().contains(query.toLowerCase()) ||
+              repo.fullName.toLowerCase().contains(query.toLowerCase()) ||
+              (repo.description?.toLowerCase().contains(query.toLowerCase()) ??
+                  false),
+        )
+        .toList();
+
+    emit(state.copyWith(filteredRepositories: filtered));
   }
 }

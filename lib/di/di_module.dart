@@ -3,19 +3,19 @@ import 'package:junie_ai_test/data/data_sources/remote/api_client/api_client.dar
 import 'package:junie_ai_test/data/data_sources/remote/api_client/github_api_client.dart';
 import 'package:junie_ai_test/data/data_sources/remote/api_service/github_api_service.dart';
 import 'package:junie_ai_test/data/data_sources/remote/api_service/github_api_service_impl.dart';
-import 'package:junie_ai_test/data/repositories/github_repo_impl.dart';
-import 'package:junie_ai_test/domain/repositories/github_repo.dart';
+import 'package:junie_ai_test/data/repositories/github_repository_impl.dart';
+import 'package:junie_ai_test/domain/repositories/github_repository.dart';
 import 'package:junie_ai_test/domain/use_cases/get_repositories_use_case.dart';
 import 'package:junie_ai_test/presentation/feature/github_repository/cubit/github_repo_cubit.dart';
 import 'package:junie_ai_test/di/service_locator.dart';
+
+/// Global service locator instance
+final sl = ServiceLocator();
 
 /// Base module interface for dependency registration
 abstract class DIModule {
   Future<void> register();
 }
-
-/// Global service locator instance
-final sl = ServiceLocator();
 
 /// Network module - registers Dio and network-related dependencies
 class NetworkModule implements DIModule {
@@ -42,9 +42,7 @@ class DataModule implements DIModule {
   @override
   Future<void> register() async {
     // Register API clients
-    sl.registerSingleton<ApiClient>(
-      GithubApiClient(sl.get<Dio>()),
-    );
+    sl.registerSingleton<ApiClient>(GithubApiClient(sl.get<Dio>()));
 
     // Register remote API services
     sl.registerSingleton<GithubApiService>(
@@ -52,8 +50,8 @@ class DataModule implements DIModule {
     );
 
     // Register GithubRepo implementation as singleton
-    sl.registerSingleton<GithubRepo>(
-      GithubRepoImpl(sl.get<GithubApiService>()),
+    sl.registerSingleton<GithubRepository>(
+      GithubRepositoryImpl(sl.get<GithubApiService>()),
     );
   }
 }
@@ -64,7 +62,7 @@ class DomainModule implements DIModule {
   Future<void> register() async {
     // Register GetRepositoriesUseCase as singleton
     sl.registerSingleton<GetRepositoriesUseCase>(
-      GetRepositoriesUseCase(sl.get<GithubRepo>()),
+      GetRepositoriesUseCase(sl.get<GithubRepository>()),
     );
   }
 }

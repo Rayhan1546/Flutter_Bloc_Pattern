@@ -7,7 +7,7 @@ class GithubApiClient extends ApiClient {
   GithubApiClient(super.dio);
 
   @override
-  String get baseUrl => 'https://api.github.com';
+  String get baseUrl => 'https://api.ithub.com';
 
   @override
   Future<Map<String, String>> defaultHeader() async {

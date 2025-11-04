@@ -12,6 +12,7 @@ class GithubApiServiceImpl implements GithubApiService {
   @override
   Future<List<GithubRepositoryDto>> getRepositories() async {
     final response = await _apiClient.get<List<dynamic>>('repositories');
+
     return response.map((json) => GithubRepositoryDto.fromJson(json)).toList();
   }
 
@@ -20,6 +21,7 @@ class GithubApiServiceImpl implements GithubApiService {
     final response = await _apiClient.get<Map<String, dynamic>>(
       'repositories/$repoId',
     );
+
     return GithubRepositoryDto.fromJson(response);
   }
 
@@ -39,6 +41,7 @@ class GithubApiServiceImpl implements GithubApiService {
     );
 
     final items = response['items'] as List;
+
     return items.map((json) => GithubRepositoryDto.fromJson(json)).toList();
   }
 
@@ -47,6 +50,7 @@ class GithubApiServiceImpl implements GithubApiService {
     final response = await _apiClient.get<List<dynamic>>(
       'users/$username/repos',
     );
+
     return response.map((json) => GithubRepositoryDto.fromJson(json)).toList();
   }
 }

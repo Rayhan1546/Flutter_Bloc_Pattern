@@ -1,7 +1,7 @@
 import 'package:junie_ai_test/di/di_module.dart';
 
 /// Registers all dependency injection modules
-/// 
+///
 /// Modules are registered in order:
 /// 1. NetworkModule - Core network dependencies (Dio)
 /// 2. DataModule - Data sources and repositories

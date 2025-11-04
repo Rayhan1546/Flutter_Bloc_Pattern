@@ -11,33 +11,21 @@ class GithubRepoList extends StatelessWidget {
   Widget build(BuildContext context) {
     return BlocBuilder<GithubRepoCubit, GithubRepoState>(
       builder: (context, state) {
-        if (state is GithubRepoInitial) {
+        if (state.isLoading) {
           return const Center(child: CircularProgressIndicator());
-        } else if (state is GithubRepoLoading) {
-          return const Center(child: CircularProgressIndicator());
-        } else if (state is GithubRepoLoaded) {
-          final filteredRepositories = state.filteredRepositories;
-          if (filteredRepositories.isEmpty) {
-            return const Center(child: Text("No Repository to show"));
-          }
-          return Expanded(
-            child: ListView.builder(
-              itemCount: filteredRepositories.length,
-              itemBuilder: (context, index) {
-                final repository = filteredRepositories[index];
-                return RepositoryItem(repository: repository);
-              },
-            ),
-          );
-        } else if (state is GithubRepoError) {
-          return Center(
-            child: Text(
-              'Error: ${state.message}',
-              style: const TextStyle(color: Colors.red),
-            ),
-          );
         }
-        return const SizedBox.shrink();
+
+        if (state.filteredRepositories.isEmpty) {
+          return const Center(child: Text("No Repository to show"));
+        }
+
+        return ListView.builder(
+          itemCount: state.filteredRepositories.length,
+          itemBuilder: (context, index) {
+            final repository = state.filteredRepositories[index];
+            return RepositoryItem(repository: repository);
+          },
+        );
       },
     );
   }

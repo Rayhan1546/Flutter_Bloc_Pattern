@@ -1,29 +1,37 @@
 import 'package:junie_ai_test/domain/entities/github_repository/github_repository.dart';
 
-sealed class GithubRepoState {
-  const GithubRepoState();
-}
+class GithubRepoState {
+  final bool isLoading;
+  final List<GithubRepo> repositories;
+  final List<GithubRepo> filteredRepositories;
+  final String? error;
 
-class GithubRepoInitial extends GithubRepoState {
-  const GithubRepoInitial();
-}
-
-class GithubRepoLoading extends GithubRepoState {
-  const GithubRepoLoading();
-}
-
-class GithubRepoLoaded extends GithubRepoState {
-  final List<GithubRepository> repositories;
-  final List<GithubRepository> filteredRepositories;
-
-  const GithubRepoLoaded({
+  GithubRepoState({
+    required this.isLoading,
     required this.repositories,
     required this.filteredRepositories,
+    this.error,
   });
-}
 
-class GithubRepoError extends GithubRepoState {
-  final String message;
+  GithubRepoState.initial()
+    : this(
+        isLoading: false,
+        repositories: [],
+        filteredRepositories: [],
+        error: null,
+      );
 
-  const GithubRepoError(this.message);
+  GithubRepoState copyWith({
+    bool? isLoading,
+    List<GithubRepo>? repositories,
+    List<GithubRepo>? filteredRepositories,
+    String? Function()? error,
+  }) {
+    return GithubRepoState(
+      isLoading: isLoading ?? this.isLoading,
+      repositories: repositories ?? this.repositories,
+      filteredRepositories: filteredRepositories ?? this.filteredRepositories,
+      error: error != null ? error() : this.error,
+    );
+  }
 }

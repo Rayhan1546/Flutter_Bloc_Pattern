@@ -4,15 +4,15 @@ import 'package:junie_ai_test/core/utils/result.dart';
 import 'package:junie_ai_test/data/data_sources/remote/api_service/github_api_service.dart';
 import 'package:junie_ai_test/data/dto/github_repository/github_repository_dto.dart';
 import 'package:junie_ai_test/domain/entities/github_repository/github_repository.dart';
-import 'package:junie_ai_test/domain/repositories/github_repo.dart';
+import 'package:junie_ai_test/domain/repositories/github_repository.dart';
 
-class GithubRepoImpl implements GithubRepo {
+class GithubRepositoryImpl implements GithubRepository {
   final GithubApiService _githubApiService;
 
-  GithubRepoImpl(this._githubApiService);
+  GithubRepositoryImpl(this._githubApiService);
 
   @override
-  Future<Result<List<GithubRepository>>> getRepositories() async {
+  Future<Result<List<GithubRepo>>> getRepositories() async {
     try {
       final dtos = await _githubApiService.getRepositories();
       final repositories = dtos.map((dto) => dto.toDomain()).toList();

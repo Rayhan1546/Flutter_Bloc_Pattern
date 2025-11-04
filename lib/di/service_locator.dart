@@ -2,9 +2,9 @@
 /// This is a simple implementation without external DI packages
 class ServiceLocator {
   static final ServiceLocator _instance = ServiceLocator._internal();
-  
+
   factory ServiceLocator() => _instance;
-  
+
   ServiceLocator._internal();
 
   final Map<Type, dynamic> _services = {};

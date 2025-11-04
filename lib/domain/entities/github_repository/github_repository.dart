@@ -1,6 +1,6 @@
 import 'package:junie_ai_test/domain/entities/github_repository/owner.dart';
 
-class GithubRepository {
+class GithubRepo {
   final int id;
   final String nodeId;
   final String name;
@@ -12,7 +12,7 @@ class GithubRepository {
   final bool fork;
   final String url;
 
-  const GithubRepository({
+  const GithubRepo({
     required this.id,
     required this.nodeId,
     required this.name,
@@ -25,7 +25,7 @@ class GithubRepository {
     required this.url,
   });
 
-  GithubRepository copyWith({
+  GithubRepo copyWith({
     int? id,
     String? nodeId,
     String? name,
@@ -37,7 +37,7 @@ class GithubRepository {
     bool? fork,
     String? url,
   }) {
-    return GithubRepository(
+    return GithubRepo(
       id: id ?? this.id,
       nodeId: nodeId ?? this.nodeId,
       name: name ?? this.name,
@@ -54,7 +54,7 @@ class GithubRepository {
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
-      other is GithubRepository &&
+      other is GithubRepo &&
           runtimeType == other.runtimeType &&
           id == other.id &&
           nodeId == other.nodeId &&

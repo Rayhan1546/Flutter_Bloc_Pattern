@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:junie_ai_test/domain/entities/github_repository/github_repository.dart';
 
 class RepositoryItem extends StatelessWidget {
-  final GithubRepository repository;
+  final GithubRepo repository;
 
   const RepositoryItem({super.key, required this.repository});
 
