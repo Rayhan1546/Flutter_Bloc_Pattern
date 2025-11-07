@@ -538,3 +538,15 @@ This architecture provides:
 - ✅ **Scalability**: Easy to add new features following patterns
 - ✅ **Flexibility**: Easy to swap implementations
 - ✅ **Type Safety**: Strong typing throughout the codebase
+
+## Dependency Versioning
+
+- Pin dependency versions to exact numbers (e.g., `hive_flutter: 1.1.0`) instead of caret ranges (`^1.1.0`).
+- Avoid using `^` version constraints to prevent unexpected upgrades that can introduce breaking changes.
+- Regularly review and consciously upgrade pinned versions after testing in a controlled environment.
+
+## Offline-First Data
+
+- Cache critical remote data locally (e.g., GitHub repositories) using Hive.
+- On network success, update the cache; on network errors, fallback to cached data.
+- Store non-sensitive data in a plain box and sensitive data in an AES‑256 encrypted box.

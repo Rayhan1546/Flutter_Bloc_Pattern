@@ -10,6 +10,7 @@ import 'package:junie_ai_test/di/di_module.dart';
 Future<void> registerModules() async {
   final modules = <DIModule>[
     NetworkModule(),
+    LocalModule(),
     DataModule(),
     DomainModule(),
     PresentationModule(),

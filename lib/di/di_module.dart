@@ -1,3 +1,4 @@
+import 'dart:typed_data';
 import 'package:dio/dio.dart';
 import 'package:junie_ai_test/data/data_sources/remote/api_client/api_client.dart';
 import 'package:junie_ai_test/data/data_sources/remote/api_client/github_api_client.dart';
@@ -8,6 +9,11 @@ import 'package:junie_ai_test/domain/repositories/github_repository.dart';
 import 'package:junie_ai_test/domain/use_cases/get_repositories_use_case.dart';
 import 'package:junie_ai_test/presentation/feature/github_repository/cubit/github_repo_cubit.dart';
 import 'package:junie_ai_test/di/service_locator.dart';
+import 'package:junie_ai_test/data/data_sources/local/local_key_value_store.dart';
+import 'package:junie_ai_test/data/data_sources/local/hive/hive_local_key_value_store.dart';
+import 'package:junie_ai_test/data/data_sources/local/hive/github_repo_cache.dart';
+import 'package:junie_ai_test/core/utils/encryption_key_provider.dart';
+import 'package:junie_ai_test/data/data_sources/local/token_local_data_source.dart';
 
 /// Global service locator instance
 final sl = ServiceLocator();
@@ -49,9 +55,39 @@ class DataModule implements DIModule {
       GithubApiServiceImpl(sl.get<ApiClient>()),
     );
 
+    // Register GitHub repos cache
+    sl.registerSingleton<GithubRepoCache>(
+      GithubRepoCache(sl.get<LocalKeyValueStore>()),
+    );
+
     // Register GithubRepo implementation as singleton
     sl.registerSingleton<GithubRepository>(
-      GithubRepositoryImpl(sl.get<GithubApiService>()),
+      GithubRepositoryImpl(
+        sl.get<GithubApiService>(),
+        sl.get<GithubRepoCache>(),
+      ),
+    );
+  }
+}
+
+/// Local storage module - registers Hive key-value store
+class LocalModule implements DIModule {
+  @override
+  Future<void> register() async {
+    final store = HiveLocalKeyValueStore();
+    await store.init();
+
+    // Set AES-256 encryption key via provider (placeholder strategy)
+    // IMPORTANT: Replace StaticEncryptionKeyProvider with a secure key source
+    final keyProvider = StaticEncryptionKeyProvider(Uint8List(32));
+    final key = await keyProvider.getKey();
+    await store.setEncryptionKey(key);
+
+    sl.registerSingleton<LocalKeyValueStore>(store);
+
+    // Token data source (uses encrypted storage by default)
+    sl.registerSingleton<TokenLocalDataSource>(
+      TokenLocalDataSource(sl.get<LocalKeyValueStore>()),
     );
   }
 }
